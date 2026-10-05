@@ -1,6 +1,8 @@
 # Build and output directories
 **/bin/
 **/obj/
+dist/
+output_samples/
 *.user
 *.suo
 

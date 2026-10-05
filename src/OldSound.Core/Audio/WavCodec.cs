@@ -68,7 +68,17 @@ public static class WavCodec
             }
             else if (chunkId == ChunkData)
             {
-                rawAudioData = reader.ReadBytes((int)chunkSize);
+                if (chunkSize == 0xFFFFFFFF || (int)chunkSize < 0)
+                {
+                    // Потоковый WAV (например, из pipe FFmpeg): читаем до конца потока
+                    using var tempMs = new MemoryStream();
+                    stream.CopyTo(tempMs);
+                    rawAudioData = tempMs.ToArray();
+                }
+                else
+                {
+                    rawAudioData = reader.ReadBytes((int)chunkSize);
+                }
                 // Чанк data найден — выходим из цикла поиска
                 break;
             }
