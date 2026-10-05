@@ -6,8 +6,14 @@ namespace OldSound.Core.Pipeline;
 
 /// <summary>
 /// Главный конвейер цифровой обработки сигналов (DSP Pipeline).
-/// Связывает все аппаратные этапы: ресемплинг SPU, сжатие Sony ADPCM,
-/// интерполяцию ЦАП Гаусса и модуль магнитной компакт-кассеты.
+/// Связывает все аппаратные этапы ретро-консоли PS1 и кассеты:
+/// 1. Подготовка частоты голоса SPU (downsample в voice rate)
+/// 2. Аппаратное сжатие Sony ADPCM (VAG) с аутентичной зернистостью
+/// 3. Воспроизведение через 4-точечную гауссову интерполяцию ЦАП SPU
+/// 4. 3-полюсный аналоговый фильтр выхода ЦАП SPU (-18 дБ/окт, срез выше 10–12 кГц)
+/// 5. Нелинейное насыщение и компрессия шины микширования SPU (Bus Glue)
+/// 6. Фоновый аналоговый шум резистивной матрицы ЦАП SPU (Noise Floor)
+/// 7. Опциональный тракт магнитной компакт-кассеты (Tape Saturation)
 /// </summary>
 public static class RetroAudioPipeline
 {
@@ -18,50 +24,34 @@ public static class RetroAudioPipeline
         int targetVoiceRate = preset.SpuVoiceRate;
         int outSampleRate = preset.OutputSampleRate > 0 ? preset.OutputSampleRate : inSampleRate;
 
-        // Обработка SPU тракта для каждого канала
+        // 1. Поканальная SPU ADPCM и ЦАП обработка
         short[][] processedChannels = new short[channels][];
         int finalLength = 0;
 
         for (int ch = 0; ch < channels; ch++)
         {
             short[] pcm16 = input.ToPcm16(ch);
-
             short[] spuOutput;
 
             if (preset.EnableAdpcm)
             {
                 var adpcm = new SonyAdpcm();
 
+                // Ресемплинг в частоту голоса SPU перед VAG компрессией
+                short[] voicePcm = (inSampleRate != targetVoiceRate)
+                    ? ResampleLinear(pcm16, inSampleRate, targetVoiceRate)
+                    : pcm16;
+
+                // Сжатие в 4-битный VAG и декодирование с аутентичным квантованием
+                short[] adpcmPcm = adpcm.ProcessPcm(voicePcm, preset.AdpcmGrit, preset.AuthenticAdpcmMode);
+
                 if (preset.EnableGaussian)
                 {
-                    // Полный аутентичный тракт:
-                    // 1. Ресемплинг в частоту голоса SPU
-                    // 2. Сжатие в 4-битный VAG и декодирование
-                    // 3. Воспроизведение через аппаратную гауссову интерполяцию ЦАП
-                    short[] voicePcm;
-                    if (inSampleRate != targetVoiceRate)
-                    {
-                        voicePcm = ResampleLinear(pcm16, inSampleRate, targetVoiceRate);
-                    }
-                    else
-                    {
-                        voicePcm = pcm16;
-                    }
-
-                    short[] adpcmPcm = adpcm.ProcessPcm(voicePcm);
-
-                    // Воспроизводим через Гаусс на выходной частоте
+                    // Воспроизведение через аппаратную гауссову интерполяцию ЦАП на выходной частоте
                     spuOutput = SpuGaussianInterpolator.Process(adpcmPcm, targetVoiceRate, targetVoiceRate, outSampleRate);
                 }
                 else
                 {
-                    // Только сырое ADPCM квантование без гауссова фильтра
-                    short[] voicePcm = (inSampleRate != targetVoiceRate)
-                        ? ResampleLinear(pcm16, inSampleRate, targetVoiceRate)
-                        : pcm16;
-
-                    short[] adpcmPcm = adpcm.ProcessPcm(voicePcm);
-
                     spuOutput = (targetVoiceRate != outSampleRate)
                         ? ResampleLinear(adpcmPcm, targetVoiceRate, outSampleRate)
                         : adpcmPcm;
@@ -69,12 +59,10 @@ public static class RetroAudioPipeline
             }
             else if (preset.EnableGaussian)
             {
-                // Только гауссов Low-Pass фильтр ЦАП без ADPCM сжатия
                 spuOutput = SpuGaussianInterpolator.Process(pcm16, inSampleRate, targetVoiceRate, outSampleRate);
             }
             else
             {
-                // Ресемплинг без консольной деградации
                 spuOutput = (inSampleRate != outSampleRate)
                     ? ResampleLinear(pcm16, inSampleRate, outSampleRate)
                     : pcm16;
@@ -87,14 +75,52 @@ public static class RetroAudioPipeline
                 finalLength = Math.Min(finalLength, spuOutput.Length);
         }
 
-        // Создаем выходной буфер
+        // Создаем выходной буфер с нормализованными float [-1.0 .. 1.0]
         var outBuffer = new AudioBuffer(channels, outSampleRate, finalLength);
         for (int ch = 0; ch < channels; ch++)
         {
             outBuffer.FromPcm16(ch, processedChannels[ch].AsSpan(0, finalLength));
         }
 
-        // Этап кассетного насыщения
+        // 2. Мягкая нелинейная сатурация и компрессия шины SPU (Bus Glue)
+        if (preset.BusGlue > 0.01f)
+        {
+            for (int ch = 0; ch < channels; ch++)
+            {
+                SpuBusGlue.Process(outBuffer.GetChannelSpan(ch), preset.BusGlue);
+            }
+        }
+
+        // 3. Аналоговый фоновый шум ЦАП SPU (Noise Floor — «акустический клей»)
+        if (preset.SpuNoiseLevel > 0.001f)
+        {
+            var noise = new SpuNoiseFloor();
+            if (channels >= 2)
+            {
+                noise.ProcessStereo(outBuffer.GetChannelSpan(0), outBuffer.GetChannelSpan(1), preset.SpuNoiseLevel);
+            }
+            else
+            {
+                noise.ProcessMono(outBuffer.GetChannelSpan(0), preset.SpuNoiseLevel);
+            }
+        }
+
+        // 4. Аппаратный 3-полюсный аналоговый фильтр выхода ЦАП SPU (-18 дБ/окт)
+        // Фильтрует и звук, и шум ЦАП, формируя мягкий теплый «подводный» акустический туман
+        if (preset.EnableAnalogFilter && preset.FilterCutoffHz > 0)
+        {
+            var filter = new SpuAnalogFilter(preset.FilterCutoffHz, outSampleRate);
+            if (channels >= 2)
+            {
+                filter.ProcessStereo(outBuffer.GetChannelSpan(0), outBuffer.GetChannelSpan(1));
+            }
+            else
+            {
+                filter.ProcessMono(outBuffer.GetChannelSpan(0));
+            }
+        }
+
+        // 5. Модуль магнитной компакт-кассеты
         if (preset.EnableTape)
         {
             var tape = new CassetteTapeSimulator(preset.TapeSettings);
@@ -105,7 +131,6 @@ public static class RetroAudioPipeline
             }
             else
             {
-                // Моно: обрабатываем в буфере
                 Span<float> mono = outBuffer.GetChannelSpan(0);
                 tape.Process(mono, mono, outSampleRate);
             }

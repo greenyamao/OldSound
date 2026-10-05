@@ -65,7 +65,7 @@ public static class Program
             new FigletText("OldSound")
                 .Color(Color.DeepSkyBlue1));
         AnsiConsole.MarkupLine("[bold grey]Аутентичный эмулятор звукового тракта PS1 SPU и аналоговой кассеты[/]");
-        AnsiConsole.MarkupLine("[grey]Sony ADPCM (VAG) • 4-Point Gaussian DAC • Cassette Saturation & Hiss[/]\n");
+        AnsiConsole.MarkupLine("[grey]Sony ADPCM (VAG) • 4-Point Gaussian DAC • SPU Analog LPF • Noise Floor • Tape Saturation[/]\n");
     }
 
     private static void PrintHelp()
@@ -77,20 +77,27 @@ public static class Program
             "  [cyan]oldsound[/] <input-file> [output-file] [--preset <имя>]\n" +
             "  [cyan]oldsound presets[/] (список доступных профилей звучания)\n\n" +
             "[bold yellow]Основные параметры:[/]\n" +
-            "  [green]--preset <имя>[/]       Профиль звучания (по умолчанию: [yellow]psx-xa-37k[/])\n" +
+            "  [green]--preset <имя>[/]       Профиль звучания (по умолчанию: [yellow]psx-sfx-22k[/])\n" +
             "  [green]-o, --output <путь>[/]   Путь к выходному файлу или папке\n" +
-            "  [green]--rate <герцы>[/]        Целевая частота SPU (44100, 37800, 32000, 22050, 18900, 11025)\n" +
-            "  [green]--tape[/]                Принудительно включить эмуляцию кассеты\n" +
+            "  [green]--rate <герцы>[/]        Целевая частота SPU (44100, 37800, 22050, 18900, 11025)\n" +
+            "  [green]--cutoff <герцы>[/]      Частота среза аналогового фильтра SPU (напр. [yellow]10200[/] или [yellow]8800[/])\n" +
+            "  [green]--no-filter[/]           Отключить аналоговый фильтр среза верхов SPU\n" +
+            "  [green]--grit <число>[/]        Зернистость / хруст ADPCM квантования (0.0 .. 1.5)\n" +
+            "  [green]--glue <число>[/]        Насыщение / аналоговый клей шины SPU (0.0 .. 2.0)\n" +
+            "  [green]--spu-noise <число>[/]   Уровень фонового шума ЦАП SPU (0.0 .. 2.0)\n" +
+            "  [green]--no-spu-noise[/]        Отключить фоновый шум ЦАП SPU\n" +
+            "  [green]--tape[/]                Включить эмуляцию кассеты\n" +
             "  [green]--no-tape[/]             Отключить эмуляцию кассеты\n" +
+            "  [green]--drive <число>[/]       Перегруз / сатурация кассеты (напр. [yellow]2.8[/])\n" +
+            "  [green]--hiss <число>[/]        Уровень шума ленты (0.0 .. 1.0)\n" +
             "  [green]--no-gauss[/]            Отключить гауссову интерполяцию ЦАП\n" +
             "  [green]--no-adpcm[/]            Отключить 4-битное ADPCM сжатие\n" +
-            "  [green]--drive <число>[/]       Перегруз / сатурация кассеты (напр. 1.5)\n" +
-            "  [green]--hiss <число>[/]        Уровень шума ленты (0.0 .. 1.0)\n" +
             "  [green]--pattern <маска>[/]     Маска файлов для batch (напр. [yellow]*.mp3[/], по умолч. [yellow]*.*[/])\n\n" +
             "[bold yellow]Примеры:[/]\n" +
-            "  oldsound process track.wav -o track_psx.wav --preset psx-xa-37k\n" +
-            "  oldsound process ambient.mp3 -o ambient_sfx.mp3 --preset psx-sfx-22k\n" +
+            "  oldsound process track.wav -o track_psx.wav --preset psx-sfx-22k\n" +
+            "  oldsound process ambient.mp3 -o ambient_fog.mp3 --preset psx-silent-hill\n" +
             "  oldsound process melody.flac -o melody_tape.ogg --preset cassette-ferric\n" +
+            "  oldsound process vocal.wav -o vocal_chunky.wav --preset psx-lofi-11k\n" +
             "  oldsound batch ./music -o ./music_retro --preset psx-tape-hybrid"
         ))
         {
@@ -105,19 +112,21 @@ public static class Program
         var table = new Table().Border(TableBorder.Rounded);
         table.AddColumn("[bold cyan]Пресет[/]");
         table.AddColumn("[bold yellow]Частота SPU[/]");
-        table.AddColumn("[bold green]ADPCM[/]");
-        table.AddColumn("[bold green]Гаусс ЦАП[/]");
+        table.AddColumn("[bold green]ADPCM / Срез[/]");
         table.AddColumn("[bold magenta]Кассета[/]");
         table.AddColumn("[bold white]Описание звучания[/]");
 
         foreach (var p in PresetRegistry.GetAll())
         {
+            string adpcmFilter = p.EnableAdpcm
+                ? $"[green]4-bit[/] / [yellow]{(p.EnableAnalogFilter ? $"{p.FilterCutoffHz:F0} Гц" : "Выкл")}[/]"
+                : "[grey]Нет[/]";
+
             table.AddRow(
                 $"[cyan]{p.Name}[/]",
                 $"{p.SpuVoiceRate} Гц",
-                p.EnableAdpcm ? "[green]Да (4-bit)[/]" : "[grey]Нет[/]",
-                p.EnableGaussian ? "[green]Да[/]" : "[grey]Нет[/]",
-                p.EnableTape ? "[magenta]Да[/]" : "[grey]Нет[/]",
+                adpcmFilter,
+                p.EnableTape ? $"[magenta]Да (Dr {p.TapeSettings.Drive:F1})[/]" : "[grey]Нет[/]",
                 p.Description
             );
         }
@@ -129,9 +138,14 @@ public static class Program
     {
         string? inputPath = null;
         string? outputPath = null;
-        string presetName = "psx-xa-37k";
+        string presetName = "psx-sfx-22k";
 
         int? overrideRate = null;
+        float? overrideCutoff = null;
+        bool? overrideFilter = null;
+        float? overrideGrit = null;
+        float? overrideGlue = null;
+        float? overrideSpuNoise = null;
         bool? overrideTape = null;
         bool? overrideGauss = null;
         bool? overrideAdpcm = null;
@@ -147,6 +161,18 @@ public static class Program
                 presetName = args[++i];
             else if (a == "--rate" && i + 1 < args.Length)
                 overrideRate = int.Parse(args[++i]);
+            else if (a == "--cutoff" && i + 1 < args.Length)
+                overrideCutoff = float.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
+            else if (a == "--no-filter")
+                overrideFilter = false;
+            else if (a == "--grit" && i + 1 < args.Length)
+                overrideGrit = float.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
+            else if (a == "--glue" && i + 1 < args.Length)
+                overrideGlue = float.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
+            else if (a == "--spu-noise" && i + 1 < args.Length)
+                overrideSpuNoise = float.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
+            else if (a == "--no-spu-noise")
+                overrideSpuNoise = 0f;
             else if (a == "--drive" && i + 1 < args.Length)
                 overrideDrive = float.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
             else if (a == "--hiss" && i + 1 < args.Length)
@@ -180,8 +206,13 @@ public static class Program
         }
 
         var preset = PresetRegistry.Get(presetName);
-        // Применяем кастомные переопределения
+        // Применяем переопределения
         if (overrideRate.HasValue) preset.SpuVoiceRate = overrideRate.Value;
+        if (overrideCutoff.HasValue) { preset.FilterCutoffHz = overrideCutoff.Value; preset.EnableAnalogFilter = true; }
+        if (overrideFilter.HasValue) preset.EnableAnalogFilter = overrideFilter.Value;
+        if (overrideGrit.HasValue) preset.AdpcmGrit = overrideGrit.Value;
+        if (overrideGlue.HasValue) preset.BusGlue = overrideGlue.Value;
+        if (overrideSpuNoise.HasValue) preset.SpuNoiseLevel = overrideSpuNoise.Value;
         if (overrideTape.HasValue) preset.EnableTape = overrideTape.Value;
         if (overrideGauss.HasValue) preset.EnableGaussian = overrideGauss.Value;
         if (overrideAdpcm.HasValue) preset.EnableAdpcm = overrideAdpcm.Value;
@@ -192,7 +223,7 @@ public static class Program
 
         AnsiConsole.MarkupLine($"[cyan]Входной файл:[/]  [white]{Path.GetFullPath(inputPath)}[/]");
         AnsiConsole.MarkupLine($"[cyan]Выходной файл:[/] [white]{Path.GetFullPath(outputPath)}[/]");
-        AnsiConsole.MarkupLine($"[cyan]Профиль:[/]       [bold yellow]{preset.Name}[/] ({preset.SpuVoiceRate} Гц, ADPCM: {preset.EnableAdpcm}, Gauss: {preset.EnableGaussian}, Tape: {preset.EnableTape})");
+        AnsiConsole.MarkupLine($"[cyan]Профиль:[/]       [bold yellow]{preset.Name}[/] ({preset.SpuVoiceRate} Гц, ADPCM Grit: {preset.AdpcmGrit:F2}, Filter: {(preset.EnableAnalogFilter ? $"{preset.FilterCutoffHz:F0} Гц" : "Выкл")}, Tape: {preset.EnableTape})");
 
         AudioBuffer inBuffer = null!;
         AudioBuffer outBuffer = null!;
@@ -204,7 +235,7 @@ public static class Program
                 ctx.Status("Загрузка и декодирование аудиофайла...");
                 inBuffer = AudioBridge.Load(inputPath);
 
-                ctx.Status($"Применение SPU тракта ({preset.SpuVoiceRate} Гц ADPCM + Gaussian DAC)...");
+                ctx.Status($"Применение аутентичного SPU тракта ({preset.SpuVoiceRate} Гц ADPCM, LPF {preset.FilterCutoffHz:F0} Гц, Noise Floor, Tape)...");
                 outBuffer = RetroAudioPipeline.Process(inBuffer, preset);
 
                 ctx.Status("Сохранение и кодирование выходного файла...");
@@ -222,7 +253,7 @@ public static class Program
     {
         string? inputDir = null;
         string? outputDir = null;
-        string presetName = "psx-xa-37k";
+        string presetName = "psx-sfx-22k";
         string pattern = "*.*";
 
         for (int i = 0; i < args.Length; i++)

@@ -1,12 +1,11 @@
 using System;
-using System.IO;
 
 namespace OldSound.Core.Dsp;
 
 /// <summary>
 /// Аппаратно точная эмуляция алгоритма Sony ADPCM (VAG format) для звукового чипа PS1 SPU.
 /// Содержит точные формулы декодирования, 5 пар аппаратных коэффициентов предсказания
-/// и оптимизированный энкодер с минимизацией среднеквадратичной ошибки (MSE).
+/// и настраиваемый энкодер с поддержкой исторической деградации (Authentic VAG Grit).
 /// </summary>
 public sealed class SonyAdpcm
 {
@@ -82,9 +81,14 @@ public sealed class SonyAdpcm
     }
 
     /// <summary>
-    /// Кодирует 28 сэмплов PCM в один 16-байтный блок VAG с подбором оптимального фильтра и сдвига.
+    /// Кодирует 28 сэмплов PCM в один 16-байтный блок VAG.
     /// </summary>
-    public void EncodeBlock(ReadOnlySpan<short> input28, Span<byte> outputBlock, byte flags = 0)
+    /// <param name="input28">28 сэмплов PCM 16-bit</param>
+    /// <param name="outputBlock">16-байтный буфер для блока VAG</param>
+    /// <param name="flags">Флаги VAG (0 = обычный блок, 1 = конец, 2 = зациклен)</param>
+    /// <param name="grit">Уровень зернистости квантования (0.0 = чистый Hi-Fi подбор, >0.0 = аутентичный «хруст»)</param>
+    /// <param name="authenticMode">Использовать исторический целочисленный алгоритм Sony SDK (encvag/MFAudio)</param>
+    public void EncodeBlock(ReadOnlySpan<short> input28, Span<byte> outputBlock, byte flags = 0, float grit = 0.0f, bool authenticMode = false)
     {
         if (input28.Length < SamplesPerBlock)
             throw new ArgumentException("Входной блок должен содержать минимум 28 сэмплов.", nameof(input28));
@@ -100,13 +104,14 @@ public sealed class SonyAdpcm
 
         Span<int> tempNibbles = stackalloc int[SamplesPerBlock];
 
-        // Перебираем все 5 аппаратных фильтров предсказания
-        for (int f = 0; f < 5; f++)
+        // В историческом режиме Sony SDK encvag использовались первые 3-4 фильтра
+        int maxFilters = authenticMode ? 4 : 5;
+
+        for (int f = 0; f < maxFilters; f++)
         {
             int f0 = Predictors[f].f0;
             int f1 = Predictors[f].f1;
 
-            // Определяем требуемый масштаб сдвига
             int maxDiff = 0;
             int h1 = _hist1;
             int h2 = _hist2;
@@ -120,16 +125,25 @@ public sealed class SonyAdpcm
                 h1 = input28[i];
             }
 
-            // Находим минимальный масштаб шкалы scale (0..12), при котором разницы умещаются в 4-бит (-8..+7)
             int scale = 0;
             while (scale < 12 && (maxDiff >> scale) > 7)
             {
                 scale++;
             }
+
+            // Зернистость (grit): огрубление масштаба квантования дельт
+            if (grit > 0.001f)
+            {
+                int gritOffset = (int)Math.Round(grit * 2.0f);
+                scale = Math.Clamp(scale + gritOffset, 0, 12);
+            }
+
             int shift = 12 - scale;
 
-            // Пробуем найденный shift и соседний shift-1 (scale+1) для минимизации ошибки
-            for (int tryShift = Math.Max(0, shift - 1); tryShift <= shift; tryShift++)
+            int minShiftTry = authenticMode ? shift : Math.Max(0, shift - 1);
+            int maxShiftTry = authenticMode ? shift : shift;
+
+            for (int tryShift = minShiftTry; tryShift <= maxShiftTry; tryShift++)
             {
                 int decodeShift = 12 - tryShift;
                 long totalError = 0;
@@ -141,12 +155,19 @@ public sealed class SonyAdpcm
                     int predicted = (h1 * f0 + h2 * f1 + 32) / 64;
                     int diff = input28[i] - predicted;
 
-                    // Квантование в 4-битный знаковый ниббл (-8..+7) с симметричным округлением
                     int rawNibble;
                     if (decodeShift > 0)
                     {
-                        int half = 1 << (decodeShift - 1);
-                        rawNibble = (diff >= 0) ? (diff + half) >> decodeShift : -((-diff + half) >> decodeShift);
+                        if (authenticMode)
+                        {
+                            // Историческое целочисленное усечение Sony
+                            rawNibble = diff >> decodeShift;
+                        }
+                        else
+                        {
+                            int half = 1 << (decodeShift - 1);
+                            rawNibble = (diff >= 0) ? (diff + half) >> decodeShift : -((-diff + half) >> decodeShift);
+                        }
                     }
                     else
                     {
@@ -156,7 +177,6 @@ public sealed class SonyAdpcm
                     rawNibble = Math.Clamp(rawNibble, -8, 7);
                     tempNibbles[i] = rawNibble;
 
-                    // Декодируем локально для оценки реальной ошибки в цепи
                     int decoded = (rawNibble << decodeShift) + predicted;
                     decoded = Math.Clamp(decoded, short.MinValue, short.MaxValue);
 
@@ -179,11 +199,9 @@ public sealed class SonyAdpcm
             }
         }
 
-        // Обновляем состояние истории
         _hist1 = bestHist1;
         _hist2 = bestHist2;
 
-        // Формируем 16-байтный блок
         outputBlock[0] = (byte)((bestFilter << 4) | (bestShift & 0x0F));
         outputBlock[1] = flags;
 
@@ -197,9 +215,8 @@ public sealed class SonyAdpcm
 
     /// <summary>
     /// Прогоняет поток 16-битных PCM сэмплов через цикл аппаратной компрессии Sony ADPCM и декодирования.
-    /// Вносит аутентичный шум квантования дельт без сглаживания ЦАП.
     /// </summary>
-    public short[] ProcessPcm(ReadOnlySpan<short> inputPcm)
+    public short[] ProcessPcm(ReadOnlySpan<short> inputPcm, float grit = 0.0f, bool authenticMode = false)
     {
         Reset();
 
@@ -221,13 +238,12 @@ public sealed class SonyAdpcm
             inputChunk.Clear();
             inputPcm.Slice(srcOffset, count).CopyTo(inputChunk);
 
-            encoder.EncodeBlock(inputChunk, block);
+            encoder.EncodeBlock(inputChunk, block, 0, grit, authenticMode);
             decoder.DecodeBlock(block, decodedChunk);
 
             decodedChunk.CopyTo(result.AsSpan(b * SamplesPerBlock, SamplesPerBlock));
         }
 
-        // Возвращаем массив исходной длины
         if (result.Length == inputPcm.Length)
             return result;
 

@@ -7,19 +7,22 @@ namespace OldSound.Core.Dsp;
 /// </summary>
 public sealed class CassetteTapeSettings
 {
-    /// <summary>Уровень магнитного насыщения / перегруза ленты (1.0 = норма, > 1.0 = теплая компрессия и гармоники).</summary>
-    public float Drive { get; set; } = 1.4f;
+    /// <summary>Уровень магнитного насыщения / перегруза ленты (1.0 = прозрачно, 2.5–3.5 = сочный аналоговый «жмых»).</summary>
+    public float Drive { get; set; } = 2.8f;
 
     /// <summary>Глубина детонации Wow (медленное плавание питча 0.5-1.5 Гц, диапазон 0.0 .. 1.0).</summary>
-    public float WowDepth { get; set; } = 0.3f;
+    public float WowDepth { get; set; } = 0.35f;
 
     /// <summary>Глубина детонации Flutter (быстрое дрожание питча 6-12 Гц, диапазон 0.0 .. 1.0).</summary>
-    public float FlutterDepth { get; set; } = 0.2f;
+    public float FlutterDepth { get; set; } = 0.25f;
 
-    /// <summary>Уровень аналогового шума магнитной ленты (0.0 .. 1.0, 0.0 = выключен).</summary>
-    public float HissLevel { get; set; } = 0.08f;
+    /// <summary>Уровень аналогового шума магнитной ленты (0.0 = выключен, 1.0 = аутентичный шум кассеты ~ -48 dB).</summary>
+    public float HissLevel { get; set; } = 0.35f;
 
-    /// <summary>Включить резонанс воспроизводящей головки (Head Bump 50-70 Гц и спад верха).</summary>
+    /// <summary>Частота среза зазора магнитной головки (Head Loss Low-Pass, 8000..16000 Гц).</summary>
+    public float CutoffHz { get; set; } = 11500f;
+
+    /// <summary>Включить резонанс воспроизводящей головки (Head Bump 65 Гц и спад верха).</summary>
     public bool EnableHeadEq { get; set; } = true;
 
     /// <summary>Соотношение обработанного и сухого сигнала (0.0 .. 1.0).</summary>
@@ -33,10 +36,10 @@ public sealed class CassetteTapeSettings
 public sealed class CassetteTapeSimulator
 {
     private readonly CassetteTapeSettings _settings;
-    private readonly Random _random = new(42);
+    private readonly Random _random = new(1985);
 
     // Параметры линии задержки для Wow/Flutter
-    private const int MaxDelaySamples = 2048;
+    private const int MaxDelaySamples = 4096;
     private readonly float[] _delayBufferL = new float[MaxDelaySamples];
     private readonly float[] _delayBufferR = new float[MaxDelaySamples];
     private int _delayWritePos;
@@ -54,7 +57,8 @@ public sealed class CassetteTapeSimulator
     private float _lpPrevL, _lpPrevR;
 
     // Состояние фильтра шума (розовый фильтр для шума ленты)
-    private float _b0Noise, _b1Noise, _b2Noise;
+    private float _b0NoiseL, _b1NoiseL, _b2NoiseL;
+    private float _b0NoiseR, _b1NoiseR, _b2NoiseR;
 
     public CassetteTapeSimulator(CassetteTapeSettings? settings = null)
     {
@@ -71,18 +75,18 @@ public sealed class CassetteTapeSimulator
         _eqX1L = _eqX2L = _eqY1L = _eqY2L = 0;
         _eqX1R = _eqX2R = _eqY1R = _eqY2R = 0;
         _lpPrevL = _lpPrevR = 0;
-        _b0Noise = _b1Noise = _b2Noise = 0;
+        _b0NoiseL = _b1NoiseL = _b2NoiseL = 0;
+        _b0NoiseR = _b1NoiseR = _b2NoiseR = 0;
     }
 
     /// <summary>
-    /// Инициализирует коэффициенты фильтра Head Bump (+2.0 dB на 65 Гц) для заданной частоты дискретизации.
+    /// Инициализирует коэффициенты фильтра Head Bump (+3.2 dB на 65 Гц) для заданной частоты дискретизации.
     /// </summary>
     private void InitFilters(int sampleRate)
     {
-        // 2nd Order Low Shelf / Peak на 65 Гц с подъемом +2.0 dB
         float f0 = 65.0f;
-        float gainDb = 2.2f;
-        float q = 0.8f;
+        float gainDb = 3.2f;
+        float q = 0.9f;
 
         float a = MathF.Pow(10.0f, gainDb / 40.0f);
         float w0 = 2.0f * MathF.PI * f0 / sampleRate;
@@ -112,25 +116,27 @@ public sealed class CassetteTapeSimulator
         InitFilters(sampleRate);
 
         int count = left.Length;
-        float drive = MathF.Max(0.1f, _settings.Drive);
-        float normDrive = MathF.Tanh(drive);
+        float drive = MathF.Max(0.5f, _settings.Drive);
 
-        // Параметры LFO: Wow (~0.8 Гц) и Flutter (~8.5 Гц)
+        // Параметры LFO: Wow (~0.85 Гц) и Flutter (~8.5 Гц)
         double wowStep = 2.0 * Math.PI * 0.85 / sampleRate;
-        double flutterStep = 2.0 * Math.PI * 8.7 / sampleRate;
+        double flutterStep = 2.0 * Math.PI * 8.5 / sampleRate;
 
-        float maxModulationSamples = 20.0f * sampleRate / 44100.0f;
-        float baseDelay = 100.0f;
+        float maxModulationSamples = 28.0f * sampleRate / 44100.0f;
+        float baseDelay = 150.0f;
 
-        // Коэффициент однополюсного Low-Pass для спада верха головки (~14.5 кГц)
-        float lpAlpha = MathF.Exp(-2.0f * MathF.PI * 14500.0f / sampleRate);
+        // Коэффициент однополюсного Low-Pass для спада верха головки (по умолчанию ~11.5 кГц)
+        float lpAlpha = MathF.Exp(-2.0f * MathF.PI * _settings.CutoffHz / sampleRate);
+
+        // Калиброванный уровень аналогового шума ленты (-50 dBFS)
+        float hissAmp = _settings.HissLevel * 0.0035f;
 
         for (int i = 0; i < count; i++)
         {
             float dryL = left[i];
             float dryR = right[i];
 
-            // 1. Wow & Flutter (Модулируемая задержка)
+            // 1. Wow & Flutter (Модулируемая задержка аналогового лентопротяжного механизма)
             double wow = Math.Sin(_wowPhase) * _settings.WowDepth;
             double flutter = Math.Sin(_flutterPhase) * _settings.FlutterDepth;
             double totalMod = (wow + flutter) * maxModulationSamples;
@@ -159,20 +165,18 @@ public sealed class CassetteTapeSimulator
 
             _delayWritePos = (_delayWritePos + 1) % MaxDelaySamples;
 
-            // 2. Нелинейная магнитная сатурация с легкой асимметрией четных гармоник
-            wetL = Saturate(wetL, drive, normDrive);
-            wetR = Saturate(wetR, drive, normDrive);
+            // 2. Нелинейная магнитная сатурация кассеты с компрессией и четными гармониками
+            wetL = SaturateTape(wetL, drive);
+            wetR = SaturateTape(wetR, drive);
 
-            // 3. Head Bump EQ (подъем баса) и Head Loss (срез ультра-верха)
+            // 3. Head Bump EQ (подъем баса 65 Гц) и Head Loss (мягкий аналоговый срез верха)
             if (_settings.EnableHeadEq)
             {
-                // Biquad фильтр Head Bump для левого канала
                 float yL = _b0 * wetL + _b1 * _eqX1L + _b2 * _eqX2L - _a1 * _eqY1L - _a2 * _eqY2L;
                 _eqX2L = _eqX1L; _eqX1L = wetL;
                 _eqY2L = _eqY1L; _eqY1L = yL;
                 wetL = yL;
 
-                // Biquad фильтр Head Bump для правого канала
                 float yR = _b0 * wetR + _b1 * _eqX1R + _b2 * _eqX2R - _a1 * _eqY1R - _a2 * _eqY2R;
                 _eqX2R = _eqX1R; _eqX1R = wetR;
                 _eqY2R = _eqY1R; _eqY1R = yR;
@@ -185,19 +189,24 @@ public sealed class CassetteTapeSimulator
                 wetR = _lpPrevR;
             }
 
-            // 4. Аналоговый шум ленты (Tape Hiss)
-            if (_settings.HissLevel > 0.001f)
+            // 4. Аналоговый шум магнитной ленты (Tape Hiss)
+            if (hissAmp > 0.00001f)
             {
-                float white = (float)(_random.NextDouble() * 2.0 - 1.0);
-                // Фильтр шума (розово-взвешенный)
-                _b0Noise = 0.99765f * _b0Noise + white * 0.0990460f;
-                _b1Noise = 0.96300f * _b1Noise + white * 0.2965164f;
-                _b2Noise = 0.57000f * _b2Noise + white * 1.0526913f;
-                float pinkNoise = (_b0Noise + _b1Noise + _b2Noise + white * 0.1848f) * 0.02f;
+                float wL = (float)(_random.NextDouble() * 2.0 - 1.0);
+                float wR = (float)(_random.NextDouble() * 2.0 - 1.0);
 
-                float hissAmp = _settings.HissLevel * 0.015f;
-                wetL += pinkNoise * hissAmp;
-                wetR += pinkNoise * hissAmp;
+                _b0NoiseL = 0.99765f * _b0NoiseL + wL * 0.0990460f;
+                _b1NoiseL = 0.96300f * _b1NoiseL + wL * 0.2965164f;
+                _b2NoiseL = 0.57000f * _b2NoiseL + wL * 1.0526913f;
+                float pinkL = (_b0NoiseL + _b1NoiseL + _b2NoiseL + wL * 0.1848f) * 0.05f;
+
+                _b0NoiseR = 0.99765f * _b0NoiseR + wR * 0.0990460f;
+                _b1NoiseR = 0.96300f * _b1NoiseR + wR * 0.2965164f;
+                _b2NoiseR = 0.57000f * _b2NoiseR + wR * 1.0526913f;
+                float pinkR = (_b0NoiseR + _b1NoiseR + _b2NoiseR + wR * 0.1848f) * 0.05f;
+
+                wetL += pinkL * hissAmp;
+                wetR += pinkR * hissAmp;
             }
 
             // 5. Микс сухого и обработанного
@@ -206,12 +215,15 @@ public sealed class CassetteTapeSimulator
         }
     }
 
-    private static float Saturate(float input, float drive, float normDrive)
+    private static float SaturateTape(float input, float drive)
     {
         float x = input * drive;
-        // Мягкая асимметрия магнитных доменов (+0.04 * x^2)
-        float asym = (x > 0) ? (x + 0.04f * x * x) : x;
-        float sat = MathF.Tanh(asym) / normDrive;
-        return sat;
+        // Магнитная асимметрия доменов (+0.07 * x^2) — создает теплые четные гармоники
+        float asym = (x > 0) ? (x + 0.07f * x * x) : x;
+        // Мягкая компрессия ленты: насыщает громкие пики и подтягивает тихие звуки
+        float sat = MathF.Tanh(asym);
+        // Сбалансированная нормализация гейна с легким подъемом для сочности
+        float norm = MathF.Sqrt(drive);
+        return Math.Clamp(sat / norm, -1.15f, 1.15f);
     }
 }
