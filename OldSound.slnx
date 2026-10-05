@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OldSound.Cli/OldSound.Cli.csproj" />
+    <Project Path="src/OldSound.Core/OldSound.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OldSound.Tests/OldSound.Tests.csproj" />
+  </Folder>
+</Solution>
