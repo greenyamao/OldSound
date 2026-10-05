@@ -26,10 +26,12 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _timer = new();
     private bool _isDraggingTimeline = false;
     private bool _isUpdatingUiFromPreset = false;
+    private bool _isInitialized = false;
 
     public MainWindow()
     {
         InitializeComponent();
+        _isInitialized = true;
 
         _timer.Interval = TimeSpan.FromMilliseconds(200);
         _timer.Tick += Timer_Tick;
@@ -53,14 +55,12 @@ public partial class MainWindow : Window
         };
 
         // Инициализируем пресет по умолчанию (Four-Sight 3DO)
-        LoadPresetToControls("four-sight-3do");
-
-        // Если в тестах лежит o.mp3, сразу предварительно загрузим его для удобства
-        string defaultTestTrack = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "tests", "o.mp3"));
-        if (File.Exists(defaultTestTrack))
+        try
         {
-            LoadFile(defaultTestTrack);
+            Rb3DoFourSight.IsChecked = true;
+            LoadPresetToControls("four-sight-3do");
         }
+        catch { }
     }
 
     private void Timer_Tick(object? sender, EventArgs e)
@@ -167,7 +167,7 @@ public partial class MainWindow : Window
 
     private void PresetRadio_Checked(object sender, RoutedEventArgs e)
     {
-        if (sender is not RadioButton rb) return;
+        if (!_isInitialized || sender is not RadioButton rb) return;
 
         string presetName = rb.Name switch
         {
@@ -186,6 +186,7 @@ public partial class MainWindow : Window
 
     private void LoadPresetToControls(string presetName)
     {
+        if (!_isInitialized || CbCodec == null) return;
         _isUpdatingUiFromPreset = true;
         try
         {

@@ -109,7 +109,7 @@
                             <TextBlock Text="ИСТОРИЧЕСКИЕ ПРОФИЛИ" FontSize="12" FontWeight="Bold" Foreground="{StaticResource BrushTextMuted}" Margin="0,0,0,12"/>
                             
                             <!-- 3DO Four-Sight (1995) -->
-                            <RadioButton x:Name="Rb3DoFourSight" Style="{StaticResource PresetRadio}" IsChecked="True" Checked="PresetRadio_Checked">
+                            <RadioButton x:Name="Rb3DoFourSight" Style="{StaticResource PresetRadio}" Checked="PresetRadio_Checked">
                                 <StackPanel>
                                     <TextBlock Text="🌟 3DO Four-Sight (1995) — Юдзи Номи" FontWeight="Bold" Foreground="{StaticResource BrushTextPrimary}"/>
                                     <TextBlock Text="22 кГц SDX2 (Square-Root Delta), linear half_rate.dsp upsampling с зеркальным верхним регистром и ЦАП 20.5 кГц" 
