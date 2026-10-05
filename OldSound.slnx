@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/OldSound.Cli/OldSound.Cli.csproj" />
     <Project Path="src/OldSound.Core/OldSound.Core.csproj" />
+    <Project Path="src/OldSound.Gui/OldSound.Gui.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/OldSound.Tests/OldSound.Tests.csproj" />

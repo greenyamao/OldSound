@@ -3,16 +3,28 @@ using System;
 namespace OldSound.Core.Dsp;
 
 /// <summary>
-/// Аппаратный аналоговый выходной фильтр чипа SPU PS1 (Reconstruction & Anti-Aliasing Filter).
+/// Топология аппаратного фильтра выходного каскада консоли.
+/// </summary>
+public enum FilterTopology
+{
+    /// <summary>3-полюсный активный фильтр PS1 SPU (-18 дБ/окт, RC + Sallen-Key Butterworth).</summary>
+    ThreePoleSpu,
+
+    /// <summary>2-полюсный фильтр Саллена-Кея / Баттерворт (-12 дБ/окт, стандарт ЦАП 3DO Burr-Brown).</summary>
+    TwoPoleSallenKey
+}
+
+/// <summary>
+/// Аппаратный аналоговый выходной фильтр ЦАП (Reconstruction & Anti-Aliasing Filter).
 /// На материнской плате PlayStation 1 после ЦАП CXD2922Q установлен 3-полюсный активный
 /// аналоговый Low-Pass фильтр (спад -18 дБ/октаву с частотой среза около 10–12 кГц).
-/// Именно он в сочетании с гауссовой интерполяцией создавал легендарный «подводный»,
-/// глухой и теплый звук саундтреков Silent Hill и King's Field IV.
+/// В 3DO применен 2-полюсный фильтр Саллена-Кея со срезом около 20.5 кГц.
 /// </summary>
 public sealed class SpuAnalogFilter
 {
     private float _cutoffHz;
     private int _sampleRate;
+    private FilterTopology _topology;
 
     // 1-й порядок (RC полюс): y[n] = b0*x[n] + b1*x[n-1] - a1*y[n-1]
     private float _rcB0, _rcB1, _rcA1;
@@ -25,10 +37,11 @@ public sealed class SpuAnalogFilter
     private float _bqX1R, _bqX2R, _bqY1R, _bqY2R;
 
     public float CutoffHz => _cutoffHz;
+    public FilterTopology Topology => _topology;
 
-    public SpuAnalogFilter(float cutoffHz = 11000f, int sampleRate = 44100)
+    public SpuAnalogFilter(float cutoffHz = 11000f, int sampleRate = 44100, FilterTopology topology = FilterTopology.ThreePoleSpu)
     {
-        SetParameters(cutoffHz, sampleRate);
+        SetParameters(cutoffHz, sampleRate, topology);
     }
 
     public void Reset()
@@ -39,10 +52,11 @@ public sealed class SpuAnalogFilter
         _bqX1R = _bqX2R = _bqY1R = _bqY2R = 0f;
     }
 
-    public void SetParameters(float cutoffHz, int sampleRate)
+    public void SetParameters(float cutoffHz, int sampleRate, FilterTopology topology = FilterTopology.ThreePoleSpu)
     {
         _cutoffHz = Math.Clamp(cutoffHz, 1000f, sampleRate * 0.48f);
         _sampleRate = sampleRate;
+        _topology = topology;
 
         // Билинейное преобразование с pre-warping
         float w0 = 2f * MathF.PI * _cutoffHz;
@@ -55,14 +69,17 @@ public sealed class SpuAnalogFilter
         _rcB1 = omega / rcA0;
         _rcA1 = (omega - k) / rcA0;
 
-        // 2-й порядок Butterworth (Q = 1.0): H(s) = omega^2 / (s^2 + omega*s + omega^2)
+        // 2-й порядок:
+        // Для PS1 SPU: Q = 1.0 (слегка подчеркнутый срез)
+        // Для 3DO Sallen-Key: Q = 0.7071 (максимально плоский Баттерворт)
+        float q = (_topology == FilterTopology.TwoPoleSallenKey) ? 0.70710678f : 1.0f;
         float omega2 = omega * omega;
-        float bqA0 = (k * k) + (k * omega) + omega2;
+        float bqA0 = (k * k) + (k * omega / q) + omega2;
         _bqB0 = omega2 / bqA0;
         _bqB1 = (2f * omega2) / bqA0;
         _bqB2 = omega2 / bqA0;
         _bqA1 = (2f * omega2 - 2f * k * k) / bqA0;
-        _bqA2 = ((k * k) - (k * omega) + omega2) / bqA0;
+        _bqA2 = ((k * k) - (k * omega / q) + omega2) / bqA0;
     }
 
     /// <summary>
@@ -91,14 +108,20 @@ public sealed class SpuAnalogFilter
 
     private float ProcessSampleLeft(float input)
     {
-        // Каскад: 1-й порядок
-        float y1 = _rcB0 * input + _rcB1 * _rcX1L - _rcA1 * _rcY1L;
-        _rcX1L = input;
-        _rcY1L = y1;
+        float stageInput = input;
 
-        // Каскад: 2-й порядок
-        float y2 = _bqB0 * y1 + _bqB1 * _bqX1L + _bqB2 * _bqX2L - _bqA1 * _bqY1L - _bqA2 * _bqY2L;
-        _bqX2L = _bqX1L; _bqX1L = y1;
+        // Если включен 3-полюсный фильтр PS1 SPU, применяем предварительный RC полюс
+        if (_topology == FilterTopology.ThreePoleSpu)
+        {
+            float y1 = _rcB0 * input + _rcB1 * _rcX1L - _rcA1 * _rcY1L;
+            _rcX1L = input;
+            _rcY1L = y1;
+            stageInput = y1;
+        }
+
+        // 2-й порядок Sallen-Key биквадрат
+        float y2 = _bqB0 * stageInput + _bqB1 * _bqX1L + _bqB2 * _bqX2L - _bqA1 * _bqY1L - _bqA2 * _bqY2L;
+        _bqX2L = _bqX1L; _bqX1L = stageInput;
         _bqY2L = _bqY1L; _bqY1L = y2;
 
         return y2;
@@ -106,14 +129,18 @@ public sealed class SpuAnalogFilter
 
     private float ProcessSampleRight(float input)
     {
-        // Каскад: 1-й порядок
-        float y1 = _rcB0 * input + _rcB1 * _rcX1R - _rcA1 * _rcY1R;
-        _rcX1R = input;
-        _rcY1R = y1;
+        float stageInput = input;
 
-        // Каскад: 2-й порядок
-        float y2 = _bqB0 * y1 + _bqB1 * _bqX1R + _bqB2 * _bqX2R - _bqA1 * _bqY1R - _bqA2 * _bqY2R;
-        _bqX2R = _bqX1R; _bqX1R = y1;
+        if (_topology == FilterTopology.ThreePoleSpu)
+        {
+            float y1 = _rcB0 * input + _rcB1 * _rcX1R - _rcA1 * _rcY1R;
+            _rcX1R = input;
+            _rcY1R = y1;
+            stageInput = y1;
+        }
+
+        float y2 = _bqB0 * stageInput + _bqB1 * _bqX1R + _bqB2 * _bqX2R - _bqA1 * _bqY1R - _bqA2 * _bqY2R;
+        _bqX2R = _bqX1R; _bqX1R = stageInput;
         _bqY2R = _bqY1R; _bqY1R = y2;
 
         return y2;

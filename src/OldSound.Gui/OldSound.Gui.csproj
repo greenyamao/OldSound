@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationTitle>OldSound // Retro Console &amp; Tape DSP</ApplicationTitle>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OldSound.Core\OldSound.Core.csproj" />
+  </ItemGroup>
+
+</Project>

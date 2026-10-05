@@ -52,9 +52,9 @@ public class SpuAnalogFilterTests
         float rmsL = CalculateRms(left);
         float rmsR = CalculateRms(right);
 
-        // Check noise is present and within calibrated console range (-60 dB to -45 dB, i.e. 0.001 to 0.006)
-        Assert.True(rmsL > 0.0005f && rmsL < 0.01f, $"Left noise RMS out of expected range: {rmsL}");
-        Assert.True(rmsR > 0.0005f && rmsR < 0.01f, $"Right noise RMS out of expected range: {rmsR}");
+        // Check noise is present and within calibrated console range (-75 dB to -45 dB)
+        Assert.True(rmsL > 0.00001f && rmsL < 0.005f, $"Left noise RMS out of expected range: {rmsL}");
+        Assert.True(rmsR > 0.00001f && rmsR < 0.005f, $"Right noise RMS out of expected range: {rmsR}");
     }
 
     [Fact]

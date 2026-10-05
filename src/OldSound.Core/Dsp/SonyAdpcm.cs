@@ -131,15 +131,7 @@ public sealed class SonyAdpcm
                 scale++;
             }
 
-            // Зернистость (grit): огрубление масштаба квантования дельт
-            if (grit > 0.001f)
-            {
-                int gritOffset = (int)Math.Round(grit * 2.0f);
-                scale = Math.Clamp(scale + gritOffset, 0, 12);
-            }
-
             int shift = 12 - scale;
-
             int minShiftTry = authenticMode ? shift : Math.Max(0, shift - 1);
             int maxShiftTry = authenticMode ? shift : shift;
 
