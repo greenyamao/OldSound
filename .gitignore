@@ -3,6 +3,7 @@
 **/obj/
 dist/
 output_samples/
+ai/
 *.user
 *.suo
 
