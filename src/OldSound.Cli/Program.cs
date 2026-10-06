@@ -130,6 +130,7 @@ public static class Program
             {
                 InterpolationType.Gaussian4Point => "Gaussian 4-pt",
                 InterpolationType.Linear3DoHalfRate => "3DO Linear (HF)",
+                InterpolationType.RawSteps => "Raw Steps",
                 InterpolationType.Linear => "Linear",
                 _ => "Bypass"
             };
@@ -161,6 +162,10 @@ public static class Program
         bool? overrideFilter = null;
         float? overrideGlue = null;
         float? overrideSpuNoise = null;
+        float? overrideNoiseTone = null;
+        float? overrideNoiseHum = null;
+        AnalogNoiseProfile? overrideNoiseProfile = null;
+        float? overrideTreble = null;
         bool? overrideTape = null;
         AudioCodecType? overrideCodec = null;
         InterpolationType? overrideInterp = null;
@@ -197,6 +202,7 @@ public static class Program
                 {
                     "gauss" or "gaussian" => InterpolationType.Gaussian4Point,
                     "linear3do" or "3do" => InterpolationType.Linear3DoHalfRate,
+                    "raw" or "rawsteps" or "steps" => InterpolationType.RawSteps,
                     "linear" => InterpolationType.Linear,
                     _ => InterpolationType.Bypass
                 };
@@ -207,12 +213,28 @@ public static class Program
                 overrideCutoff = float.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
             else if (a == "--no-filter")
                 overrideFilter = false;
+            else if (a == "--treble" || a == "--air" && i + 1 < args.Length)
+                overrideTreble = float.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
             else if (a == "--glue" && i + 1 < args.Length)
                 overrideGlue = float.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
             else if (a == "--spu-noise" && i + 1 < args.Length)
                 overrideSpuNoise = float.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
             else if (a == "--no-spu-noise")
                 overrideSpuNoise = 0f;
+            else if (a == "--noise-tone" && i + 1 < args.Length)
+                overrideNoiseTone = float.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
+            else if (a == "--noise-hum" && i + 1 < args.Length)
+                overrideNoiseHum = float.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
+            else if (a == "--noise-profile" && i + 1 < args.Length)
+            {
+                string np = args[++i].ToLowerInvariant();
+                overrideNoiseProfile = np switch
+                {
+                    "cassette" or "tape" => AnalogNoiseProfile.Cassette,
+                    "pure" or "purehiss" or "hiss" => AnalogNoiseProfile.PureHiss,
+                    _ => AnalogNoiseProfile.Console
+                };
+            }
             else if (a == "--drive" && i + 1 < args.Length)
                 overrideDrive = float.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture);
             else if (a == "--hiss" && i + 1 < args.Length)
@@ -255,8 +277,12 @@ public static class Program
         if (overrideRate.HasValue) preset.SpuVoiceRate = overrideRate.Value;
         if (overrideCutoff.HasValue) { preset.FilterCutoffHz = overrideCutoff.Value; preset.EnableAnalogFilter = true; }
         if (overrideFilter.HasValue) preset.EnableAnalogFilter = overrideFilter.Value;
+        if (overrideTreble.HasValue) preset.TrebleBoostDb = overrideTreble.Value;
         if (overrideGlue.HasValue) preset.BusGlue = overrideGlue.Value;
         if (overrideSpuNoise.HasValue) preset.SpuNoiseLevel = overrideSpuNoise.Value;
+        if (overrideNoiseTone.HasValue) preset.NoiseTone = overrideNoiseTone.Value;
+        if (overrideNoiseHum.HasValue) preset.NoiseHumLevel = overrideNoiseHum.Value;
+        if (overrideNoiseProfile.HasValue) preset.NoiseProfile = overrideNoiseProfile.Value;
         if (overrideTape.HasValue) preset.EnableTape = overrideTape.Value;
         if (overrideDrive.HasValue) preset.TapeSettings.Drive = overrideDrive.Value;
         if (overrideHiss.HasValue) preset.TapeSettings.HissLevel = overrideHiss.Value;

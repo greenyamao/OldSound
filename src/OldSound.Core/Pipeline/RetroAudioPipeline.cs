@@ -35,7 +35,9 @@ public static class RetroAudioPipeline
                 short[] filtered = (preset.PreFilterCutoffHz > 0f && preset.PreFilterCutoffHz < 20000f)
                     ? ApplyPreFilter(pcm16, inSampleRate, preset.PreFilterCutoffHz)
                     : pcm16;
-                voicePcm = ResampleLinear(filtered, inSampleRate, targetVoiceRate);
+                voicePcm = (preset.PreFilterCutoffHz <= 0f || preset.Interpolation == InterpolationType.RawSteps)
+                    ? ResampleRawSteps(filtered, inSampleRate, targetVoiceRate)
+                    : ResampleLinear(filtered, inSampleRate, targetVoiceRate);
             }
             else
             {
@@ -82,6 +84,12 @@ public static class RetroAudioPipeline
                     }
                     break;
 
+                case InterpolationType.RawSteps:
+                    reconstructedOutput = (targetVoiceRate != outSampleRate)
+                        ? ResampleRawSteps(decodedPcm, targetVoiceRate, outSampleRate)
+                        : decodedPcm;
+                    break;
+
                 case InterpolationType.Linear:
                     reconstructedOutput = (targetVoiceRate != outSampleRate)
                         ? ResampleLinear(decodedPcm, targetVoiceRate, outSampleRate)
@@ -90,7 +98,9 @@ public static class RetroAudioPipeline
 
                 case InterpolationType.Bypass:
                 default:
-                    reconstructedOutput = decodedPcm;
+                    reconstructedOutput = (targetVoiceRate != outSampleRate)
+                        ? ResampleRawSteps(decodedPcm, targetVoiceRate, outSampleRate)
+                        : decodedPcm;
                     break;
             }
 
@@ -109,7 +119,8 @@ public static class RetroAudioPipeline
         }
 
         // 2. Hardware analog output DAC filter (PS1 3-pole or 3DO 2-pole Sallen-Key)
-        if (preset.EnableAnalogFilter && preset.FilterCutoffHz > 0)
+        // When FilterCutoffHz >= 21900 Hz, the analog low-pass filter is bypassed (wide open pass-through).
+        if (preset.EnableAnalogFilter && preset.FilterCutoffHz > 0 && preset.FilterCutoffHz < 21900f)
         {
             var filter = new SpuAnalogFilter(preset.FilterCutoffHz, outSampleRate, preset.FilterTopology);
             if (channels >= 2)
@@ -122,19 +133,38 @@ public static class RetroAudioPipeline
             }
         }
 
+        // 2b. High-frequency Air / Presence boost or cut (-6 dB .. +12 dB)
+        if (MathF.Abs(preset.TrebleBoostDb) > 0.05f)
+        {
+            ApplyTrebleShelf(outBuffer, 6500f, preset.TrebleBoostDb, outSampleRate);
+        }
+
         // 3. Master analog output noise floor
         // Added at the very end of the pipeline at 44.1 kHz,
-        // providing a stereo analog floor across the soundscape.
+        // providing an authentic analog noise bed across the soundscape.
         if (preset.SpuNoiseLevel > 0.0001f)
         {
             var noise = new SpuNoiseFloor();
             if (channels >= 2)
             {
-                noise.ProcessStereo(outBuffer.GetChannelSpan(0), outBuffer.GetChannelSpan(1), preset.SpuNoiseLevel, preset.NoiseProfile, outBuffer.SampleRate);
+                noise.ProcessStereo(
+                    outBuffer.GetChannelSpan(0), 
+                    outBuffer.GetChannelSpan(1), 
+                    preset.SpuNoiseLevel, 
+                    preset.NoiseProfile, 
+                    outBuffer.SampleRate,
+                    preset.NoiseTone,
+                    preset.NoiseHumLevel);
             }
             else
             {
-                noise.ProcessMono(outBuffer.GetChannelSpan(0), preset.SpuNoiseLevel, preset.NoiseProfile, outBuffer.SampleRate);
+                noise.ProcessMono(
+                    outBuffer.GetChannelSpan(0), 
+                    preset.SpuNoiseLevel, 
+                    preset.NoiseProfile, 
+                    outBuffer.SampleRate,
+                    preset.NoiseTone,
+                    preset.NoiseHumLevel);
             }
         }
 
@@ -225,5 +255,64 @@ public static class RetroAudioPipeline
         }
 
         return output;
+    }
+
+    private static short[] ResampleRawSteps(ReadOnlySpan<short> input, int inRate, int outRate)
+    {
+        if (inRate == outRate)
+            return input.ToArray();
+
+        long outCount = (long)Math.Ceiling((double)input.Length * outRate / inRate);
+        var output = new short[outCount];
+        double step = (double)inRate / outRate;
+        double pos = 0.0;
+
+        for (int i = 0; i < outCount; i++)
+        {
+            int idx = (int)Math.Floor(pos);
+            if (idx >= input.Length) idx = input.Length - 1;
+            output[i] = input[idx];
+            pos += step;
+        }
+
+        return output;
+    }
+
+    private static void ApplyTrebleShelf(AudioBuffer buffer, float frequency, float gainDb, int sampleRate)
+    {
+        float a = MathF.Pow(10f, gainDb / 40f);
+        float w0 = 2f * MathF.PI * frequency / sampleRate;
+        float cosW0 = MathF.Cos(w0);
+        float sinW0 = MathF.Sin(w0);
+        float alpha = sinW0 / (2f * 0.7071f);
+
+        float b0 = a * ((a + 1f) + (a - 1f) * cosW0 + 2f * MathF.Sqrt(a) * alpha);
+        float b1 = -2f * a * ((a - 1f) + (a + 1f) * cosW0);
+        float b2 = a * ((a + 1f) + (a - 1f) * cosW0 - 2f * MathF.Sqrt(a) * alpha);
+        float a0 = (a + 1f) - (a - 1f) * cosW0 + 2f * MathF.Sqrt(a) * alpha;
+        float a1 = 2f * ((a - 1f) - (a + 1f) * cosW0);
+        float a2 = (a + 1f) - (a - 1f) * cosW0 - 2f * MathF.Sqrt(a) * alpha;
+
+        float cB0 = b0 / a0;
+        float cB1 = b1 / a0;
+        float cB2 = b2 / a0;
+        float cA1 = a1 / a0;
+        float cA2 = a2 / a0;
+
+        for (int ch = 0; ch < buffer.Channels; ch++)
+        {
+            var span = buffer.GetChannelSpan(ch);
+            float x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+            for (int i = 0; i < span.Length; i++)
+            {
+                float x0 = span[i];
+                float y0 = cB0 * x0 + cB1 * x1 + cB2 * x2 - cA1 * y1 - cA2 * y2;
+                x2 = x1;
+                x1 = x0;
+                y2 = y1;
+                y1 = y0;
+                span[i] = y0;
+            }
+        }
     }
 }

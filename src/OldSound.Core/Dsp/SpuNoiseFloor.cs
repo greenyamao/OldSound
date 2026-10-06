@@ -62,36 +62,52 @@ public sealed class SpuNoiseFloor
     /// <summary>
     /// Applies physical analog noise to a stereo signal.
     /// </summary>
+    /// <summary>
+    /// Applies physical analog noise to a stereo signal.
+    /// </summary>
     public void ProcessStereo(
         Span<float> left, 
         Span<float> right, 
         float level = 1.0f, 
         AnalogNoiseProfile profile = AnalogNoiseProfile.Console,
-        int sampleRate = 44100)
+        int sampleRate = 44100,
+        float tone = 0.0f,
+        float humLevel = 0.20f)
     {
         if (level <= 0.0001f) return;
 
         float clampedLevel = Math.Clamp(level, 0.0f, 2.0f);
         float hissAmp = MathF.Pow(clampedLevel, 1.4f) * 0.038f;
-        float humScale = MathF.Pow(clampedLevel, 1.5f);
+        float effectiveHumScale = MathF.Pow(clampedLevel, 1.5f) * Math.Clamp(humLevel, 0.0f, 2.0f);
+        float clampedTone = Math.Clamp(tone, -1.0f, 1.0f);
 
         int length = Math.Min(left.Length, right.Length);
 
-        // Filter parameters according to profile
+        // Filter parameters according to profile and tone
         BiquadCoeffs f1, f2;
         if (profile == AnalogNoiseProfile.Console)
         {
-            // Filter 1: SPU DAC output roll-off at 16.5 kHz
-            f1 = BiquadCoeffs.LowPass(16500f, 0.707f, sampleRate);
+            // Filter 1: SPU DAC output roll-off (16.5 kHz shifted by tone)
+            float cutoff = Math.Clamp(16500f * MathF.Pow(1.4f, clampedTone), 3000f, sampleRate * 0.46f);
+            f1 = BiquadCoeffs.LowPass(cutoff, 0.707f, sampleRate);
             // Filter 2: Gentle subsonic high-pass at 40 Hz
             f2 = BiquadCoeffs.HighPass(40f, 0.707f, sampleRate);
         }
+        else if (profile == AnalogNoiseProfile.PureHiss)
+        {
+            // Pure clean hiss without resonant bump
+            float cutoff = Math.Clamp(18000f * MathF.Pow(1.5f, clampedTone), 3500f, sampleRate * 0.46f);
+            f1 = BiquadCoeffs.LowPass(cutoff, 0.707f, sampleRate);
+            f2 = BiquadCoeffs.HighPass(35f, 0.707f, sampleRate);
+            effectiveHumScale = 0f; // Pure hiss has zero mains hum
+        }
         else
         {
-            // Filter 1: Magnetic tape head gap loss at 14.2 kHz
-            f1 = BiquadCoeffs.LowPass(14200f, 0.8f, sampleRate);
-            // Filter 2: NAB 120µs head inductance bump (+6.5 dB at 8.2 kHz)
-            f2 = BiquadCoeffs.PeakingEq(8200f, 1.3f, 6.5f, sampleRate);
+            // Cassette: Magnetic tape head gap loss + NAB bump shifted by tone
+            float cutoff = Math.Clamp(14200f * MathF.Pow(1.5f, clampedTone), 3500f, sampleRate * 0.46f);
+            float peakGain = Math.Clamp(6.5f + clampedTone * 3.0f, 1.0f, 12.0f);
+            f1 = BiquadCoeffs.LowPass(cutoff, 0.8f, sampleRate);
+            f2 = BiquadCoeffs.PeakingEq(8200f, 1.3f, peakGain, sampleRate);
         }
 
         // Phase step increments
@@ -101,6 +117,8 @@ public sealed class SpuNoiseFloor
         double stepWhine = 2.0 * Math.PI * 15625.0 / sampleRate;
         double stepRumble = 2.0 * Math.PI * 68.0 / sampleRate;
         double stepFlutter = 2.0 * Math.PI * 0.75 / sampleRate;
+
+        float whiteMix = (clampedTone > 0f) ? clampedTone * 0.35f : 0f;
 
         for (int i = 0; i < length; i++)
         {
@@ -132,32 +150,41 @@ public sealed class SpuNoiseFloor
             float shapedR = ApplyBiquad(_dcOutR, in f1, ref _f1X1R, ref _f1X2R, ref _f1Y1R, ref _f1Y2R);
             shapedR = ApplyBiquad(shapedR, in f2, ref _f2X1R, ref _f2X2R, ref _f2Y1R, ref _f2Y2R);
 
+            if (whiteMix > 0f)
+            {
+                shapedL = (1f - whiteMix) * shapedL + whiteMix * (wL * 0.25f);
+                shapedR = (1f - whiteMix) * shapedR + whiteMix * (wR * 0.25f);
+            }
+
             // 3. Synthesize mono ground hum / motor / line scan artifacts
             float monoArtifact = 0f;
-            if (profile == AnalogNoiseProfile.Console)
+            if (effectiveHumScale > 0.0001f)
             {
-                // Power supply hum (50 Hz + 100 Hz rectifier + 150 Hz 3rd harmonic)
-                float hum50 = (float)Math.Sin(_humPhase50) * 0.0032f;
-                float hum100 = (float)Math.Sin(_humPhase100) * 0.0020f;
-                float hum150 = (float)Math.Sin(_humPhase150) * 0.0007f;
+                if (profile == AnalogNoiseProfile.Console)
+                {
+                    // Power supply hum (50 Hz + 100 Hz rectifier + 150 Hz 3rd harmonic)
+                    float hum50 = (float)Math.Sin(_humPhase50) * 0.0032f;
+                    float hum100 = (float)Math.Sin(_humPhase100) * 0.0020f;
+                    float hum150 = (float)Math.Sin(_humPhase150) * 0.0007f;
 
-                // CRT line scan / DMA clock whine (15.625 kHz)
-                float whine = (float)Math.Sin(_clockWhinePhase) * 0.00065f;
+                    // CRT line scan / DMA clock whine (15.625 kHz)
+                    float whine = (float)Math.Sin(_clockWhinePhase) * 0.00065f;
 
-                monoArtifact = (hum50 + hum100 + hum150 + whine) * humScale;
-            }
-            else
-            {
-                // Transformer hum + capstan bearing rumble (68 Hz)
-                float hum50 = (float)Math.Sin(_humPhase50) * 0.0025f;
-                float rumble = (float)Math.Sin(_motorRumblePhase) * 0.0016f;
+                    monoArtifact = (hum50 + hum100 + hum150 + whine) * effectiveHumScale;
+                }
+                else if (profile == AnalogNoiseProfile.Cassette)
+                {
+                    // Transformer hum + capstan bearing rumble (68 Hz)
+                    float hum50 = (float)Math.Sin(_humPhase50) * 0.0025f;
+                    float rumble = (float)Math.Sin(_motorRumblePhase) * 0.0016f;
 
-                // Tape micro-flutter
-                float flutterMod = 1.0f + 0.04f * (float)Math.Sin(_tapeFlutterPhase);
-                shapedL *= flutterMod;
-                shapedR *= flutterMod;
+                    // Tape micro-flutter
+                    float flutterMod = 1.0f + 0.04f * (float)Math.Sin(_tapeFlutterPhase);
+                    shapedL *= flutterMod;
+                    shapedR *= flutterMod;
 
-                monoArtifact = (hum50 + rumble) * humScale;
+                    monoArtifact = (hum50 + rumble) * effectiveHumScale;
+                }
             }
 
             // Phase increments
@@ -181,24 +208,37 @@ public sealed class SpuNoiseFloor
         Span<float> channel, 
         float level = 1.0f, 
         AnalogNoiseProfile profile = AnalogNoiseProfile.Console,
-        int sampleRate = 44100)
+        int sampleRate = 44100,
+        float tone = 0.0f,
+        float humLevel = 0.20f)
     {
         if (level <= 0.0001f) return;
 
         float clampedLevel = Math.Clamp(level, 0.0f, 2.0f);
         float hissAmp = MathF.Pow(clampedLevel, 1.4f) * 0.038f;
-        float humScale = MathF.Pow(clampedLevel, 1.5f);
+        float effectiveHumScale = MathF.Pow(clampedLevel, 1.5f) * Math.Clamp(humLevel, 0.0f, 2.0f);
+        float clampedTone = Math.Clamp(tone, -1.0f, 1.0f);
 
         BiquadCoeffs f1, f2;
         if (profile == AnalogNoiseProfile.Console)
         {
-            f1 = BiquadCoeffs.LowPass(16500f, 0.707f, sampleRate);
+            float cutoff = Math.Clamp(16500f * MathF.Pow(1.4f, clampedTone), 3000f, sampleRate * 0.46f);
+            f1 = BiquadCoeffs.LowPass(cutoff, 0.707f, sampleRate);
             f2 = BiquadCoeffs.HighPass(40f, 0.707f, sampleRate);
+        }
+        else if (profile == AnalogNoiseProfile.PureHiss)
+        {
+            float cutoff = Math.Clamp(18000f * MathF.Pow(1.5f, clampedTone), 3500f, sampleRate * 0.46f);
+            f1 = BiquadCoeffs.LowPass(cutoff, 0.707f, sampleRate);
+            f2 = BiquadCoeffs.HighPass(35f, 0.707f, sampleRate);
+            effectiveHumScale = 0f;
         }
         else
         {
-            f1 = BiquadCoeffs.LowPass(14200f, 0.8f, sampleRate);
-            f2 = BiquadCoeffs.PeakingEq(8200f, 1.3f, 6.5f, sampleRate);
+            float cutoff = Math.Clamp(14200f * MathF.Pow(1.5f, clampedTone), 3500f, sampleRate * 0.46f);
+            float peakGain = Math.Clamp(6.5f + clampedTone * 3.0f, 1.0f, 12.0f);
+            f1 = BiquadCoeffs.LowPass(cutoff, 0.8f, sampleRate);
+            f2 = BiquadCoeffs.PeakingEq(8200f, 1.3f, peakGain, sampleRate);
         }
 
         double step50 = 2.0 * Math.PI * 50.0 / sampleRate;
@@ -206,6 +246,8 @@ public sealed class SpuNoiseFloor
         double step150 = 2.0 * Math.PI * 150.0 / sampleRate;
         double stepWhine = 2.0 * Math.PI * 15625.0 / sampleRate;
         double stepRumble = 2.0 * Math.PI * 68.0 / sampleRate;
+
+        float whiteMix = (clampedTone > 0f) ? clampedTone * 0.35f : 0f;
 
         for (int i = 0; i < channel.Length; i++)
         {
@@ -221,20 +263,28 @@ public sealed class SpuNoiseFloor
             float shaped = ApplyBiquad(_dcOutL, in f1, ref _f1X1L, ref _f1X2L, ref _f1Y1L, ref _f1Y2L);
             shaped = ApplyBiquad(shaped, in f2, ref _f2X1L, ref _f2X2L, ref _f2Y1L, ref _f2Y2L);
 
-            float artifact = 0f;
-            if (profile == AnalogNoiseProfile.Console)
+            if (whiteMix > 0f)
             {
-                float hum50 = (float)Math.Sin(_humPhase50) * 0.0032f;
-                float hum100 = (float)Math.Sin(_humPhase100) * 0.0020f;
-                float hum150 = (float)Math.Sin(_humPhase150) * 0.0007f;
-                float whine = (float)Math.Sin(_clockWhinePhase) * 0.00065f;
-                artifact = (hum50 + hum100 + hum150 + whine) * humScale;
+                shaped = (1f - whiteMix) * shaped + whiteMix * (w * 0.25f);
             }
-            else
+
+            float artifact = 0f;
+            if (effectiveHumScale > 0.0001f)
             {
-                float hum50 = (float)Math.Sin(_humPhase50) * 0.0025f;
-                float rumble = (float)Math.Sin(_motorRumblePhase) * 0.0016f;
-                artifact = (hum50 + rumble) * humScale;
+                if (profile == AnalogNoiseProfile.Console)
+                {
+                    float hum50 = (float)Math.Sin(_humPhase50) * 0.0032f;
+                    float hum100 = (float)Math.Sin(_humPhase100) * 0.0020f;
+                    float hum150 = (float)Math.Sin(_humPhase150) * 0.0007f;
+                    float whine = (float)Math.Sin(_clockWhinePhase) * 0.00065f;
+                    artifact = (hum50 + hum100 + hum150 + whine) * effectiveHumScale;
+                }
+                else if (profile == AnalogNoiseProfile.Cassette)
+                {
+                    float hum50 = (float)Math.Sin(_humPhase50) * 0.0025f;
+                    float rumble = (float)Math.Sin(_motorRumblePhase) * 0.0016f;
+                    artifact = (hum50 + rumble) * effectiveHumScale;
+                }
             }
 
             _humPhase50 = (_humPhase50 + step50) % (Math.PI * 2.0);

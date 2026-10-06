@@ -28,7 +28,10 @@ public enum InterpolationType
     /// <summary>Linear upsampler from 3DO half_rate.dsp with preserved high-frequency mirror imaging in 11-22 kHz.</summary>
     Linear3DoHalfRate,
 
-    /// <summary>Standard linear interpolation.</summary>
+    /// <summary>Raw sample-and-hold step reconstruction (Zero-Order Hold staircase DAC, maximum high-frequency bite and mirror imaging).</summary>
+    RawSteps,
+
+    /// <summary>Standard linear interpolation (triangular low-pass smoothing).</summary>
     Linear,
 
     /// <summary>No interpolation (bypass).</summary>
@@ -44,7 +47,10 @@ public enum AnalogNoiseProfile
     Console,
 
     /// <summary>Analog compact cassette (Type I NAB 120µs, 8.2 kHz resonance, 14.2 kHz gap loss, 50/68 Hz motor rumble).</summary>
-    Cassette
+    Cassette,
+
+    /// <summary>Pure hiss (clean broadband tape/analog floor without mains hum or resonant peaks).</summary>
+    PureHiss
 }
 
 /// <summary>
@@ -76,14 +82,23 @@ public sealed class AudioPreset
     /// <summary>Analog filter cutoff frequency in Hz (e.g. 10500 for PS1 or 20500 for 3DO).</summary>
     public float FilterCutoffHz { get; set; } = 11000f;
 
+    /// <summary>Reconstruction high-frequency air / treble boost in dB (-6 dB .. +12 dB, default 0 dB).</summary>
+    public float TrebleBoostDb { get; set; } = 0.0f;
+
     /// <summary>Use historical Sony SDK (encvag) integer calculation mode.</summary>
     public bool AuthenticAdpcmMode { get; set; } = true;
 
     /// <summary>Analog DAC noise floor level (0.0 = off, 1.0 = standard ~ -66 dBFS).</summary>
     public float SpuNoiseLevel { get; set; } = 0.5f;
 
-    /// <summary>Analog noise profile (Console or Cassette).</summary>
+    /// <summary>Analog noise profile (Console, Cassette, or PureHiss).</summary>
     public AnalogNoiseProfile NoiseProfile { get; set; } = AnalogNoiseProfile.Console;
+
+    /// <summary>Noise spectral tone / color (-1.0 = dark/warm, 0.0 = natural, +1.0 = bright/crisp hiss).</summary>
+    public float NoiseTone { get; set; } = 0.0f;
+
+    /// <summary>Low-frequency power supply hum and motor rumble level (0.0 = hiss only, 1.0 = full hum/rumble).</summary>
+    public float NoiseHumLevel { get; set; } = 0.20f;
 
     /// <summary>Soft analog summing bus saturation (0.0 = off, 1.0 = standard).</summary>
     public float BusGlue { get; set; } = 0.5f;

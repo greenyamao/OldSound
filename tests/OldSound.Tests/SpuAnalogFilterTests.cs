@@ -1,4 +1,5 @@
 using System;
+using OldSound.Core.Audio;
 using OldSound.Core.Dsp;
 using OldSound.Core.Pipeline;
 using Xunit;
@@ -64,6 +65,45 @@ public class SpuAnalogFilterTests
         float rmsTapeR = CalculateRms(right);
         Assert.True(rmsTapeL > 0.001f && rmsTapeL < 0.05f, $"Tape left noise RMS out of expected range: {rmsTapeL}");
         Assert.True(rmsTapeR > 0.001f && rmsTapeR < 0.05f, $"Tape right noise RMS out of expected range: {rmsTapeR}");
+
+        // Pure hiss profile
+        noise.Reset();
+        Array.Clear(left);
+        Array.Clear(right);
+        noise.ProcessStereo(left, right, 1.0f, AnalogNoiseProfile.PureHiss, 44100, tone: 0.5f, humLevel: 0.0f);
+        float rmsHissL = CalculateRms(left);
+        Assert.True(rmsHissL > 0.001f && rmsHissL < 0.05f, $"Pure hiss RMS out of expected range: {rmsHissL}");
+    }
+
+    [Fact]
+    public void Pipeline_RawStepsPreservesHighFrequencyTreble()
+    {
+        // Generate high frequency tone at 5 kHz near Nyquist of 11025 Hz
+        int sampleRate = 44100;
+        int length = 44100;
+        var buffer = new AudioBuffer(1, sampleRate, length);
+        var span = buffer.GetChannelSpan(0);
+        for (int i = 0; i < length; i++)
+        {
+            span[i] = MathF.Sin(2f * MathF.PI * 4500f * i / sampleRate);
+        }
+
+        var preset = new AudioPreset
+        {
+            Codec = AudioCodecType.Bypass,
+            SpuVoiceRate = 11025,
+            Interpolation = InterpolationType.RawSteps,
+            PreFilterCutoffHz = 0f,
+            EnableAnalogFilter = false,
+            FilterCutoffHz = 22000f,
+            SpuNoiseLevel = 0f
+        };
+
+        var processed = RetroAudioPipeline.Process(buffer, preset);
+        float rms = CalculateRms(processed.GetChannelSpan(0));
+
+        // In raw steps without smoothing, RMS should be well-preserved (> 0.45)
+        Assert.True(rms > 0.45f, $"Raw steps attenuated 4.5 kHz too heavily: {rms}");
     }
 
     [Fact]

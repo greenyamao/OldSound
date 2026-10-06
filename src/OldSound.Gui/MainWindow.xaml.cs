@@ -105,7 +105,7 @@ public partial class MainWindow : FluentWindow
 
     private static string FormatPresetTitle(string name) => name switch
     {
-        "four-sight-1995" => "★ Four-Sight (1995 3DO SDX2)",
+        "four-sight-1995" => "★ Four-Sight (11 kHz Sony ADPCM)",
         "ps1-spu-1994" => "PlayStation (1994 SPU VAG)",
         "cassette-type1" => "Compact Cassette (Type I Tape)",
         _ => name
@@ -151,13 +151,14 @@ public partial class MainWindow : FluentWindow
                 _ => 2
             };
 
-            // Interpolation: 0 = 3DO Linear, 1 = Raw Steps, 2 = Gaussian, 3 = Bypass
+            // Interpolation: 0 = 3DO Linear, 1 = Raw Steps, 2 = Gaussian, 3 = Linear (Smooth), 4 = Bypass
             ComboInterp.SelectedIndex = p.Interpolation switch
             {
                 InterpolationType.Linear3DoHalfRate => 0,
-                InterpolationType.Linear => 1,
+                InterpolationType.RawSteps => 1,
                 InterpolationType.Gaussian4Point => 2,
-                _ => 3
+                InterpolationType.Linear => 3,
+                _ => 4
             };
 
             // Clock Rate
@@ -169,18 +170,51 @@ public partial class MainWindow : FluentWindow
 
             // Filter Cutoff
             SliderFilterCutoff.Value = p.FilterCutoffHz;
-            TxtFilterCutoff.Text = $"{p.FilterCutoffHz:F0} Hz";
+            TxtFilterCutoff.Text = (p.FilterCutoffHz >= 21900f) ? "22 000 Hz (Off)" : $"{p.FilterCutoffHz:F0} Hz";
 
-            // Noise Model & Floor (Master Analog)
-            ComboNoiseProfile.SelectedIndex = (p.NoiseProfile == AnalogNoiseProfile.Cassette) ? 1 : 0;
+            // HF Treble Air Boost
+            if (SliderTrebleBoost != null)
+            {
+                SliderTrebleBoost.Value = p.TrebleBoostDb;
+                TxtTrebleBoost.Text = (p.TrebleBoostDb > 0) ? $"+{p.TrebleBoostDb:F1} dB" : (p.TrebleBoostDb < 0) ? $"{p.TrebleBoostDb:F1} dB" : "0 dB";
+            }
+
+            // Noise Model (0 = Cassette, 1 = Console, 2 = Pure Hiss)
+            ComboNoiseProfile.SelectedIndex = p.NoiseProfile switch
+            {
+                AnalogNoiseProfile.Cassette => 0,
+                AnalogNoiseProfile.Console => 1,
+                _ => 2
+            };
+
+            // Noise Floor
             SliderNoise.Value = p.SpuNoiseLevel;
             TxtNoise.Text = (p.SpuNoiseLevel > 0.001f) ? $"{(int)(p.SpuNoiseLevel * 100)}%" : "Off";
+
+            // Noise Tone
+            if (SliderNoiseTone != null)
+            {
+                SliderNoiseTone.Value = p.NoiseTone;
+                TxtNoiseTone.Text = p.NoiseTone switch
+                {
+                    < -0.3f => $"Warm ({(int)(p.NoiseTone * 100)}%)",
+                    > 0.3f => $"Bright (+{(int)(p.NoiseTone * 100)}%)",
+                    _ => "Neutral"
+                };
+            }
+
+            // Hum & Rumble
+            if (SliderNoiseHum != null)
+            {
+                SliderNoiseHum.Value = p.NoiseHumLevel;
+                TxtNoiseHum.Text = (p.NoiseHumLevel > 0.001f) ? $"{(int)(p.NoiseHumLevel * 100)}%" : "Off (0%)";
+            }
 
             if (TxtPresetChip != null)
             {
                 TxtPresetChip.Text = p.Name switch
                 {
-                    "four-sight-1995" => "3DO Opera 1995 (SDX2)",
+                    "four-sight-1995" => "Four-Sight 1995 (Sony ADPCM)",
                     "ps1-spu-1994" => "PlayStation 1994 (SPU)",
                     "cassette-type1" => "Cassette (Type I Tape)",
                     _ => p.Name
@@ -207,23 +241,33 @@ public partial class MainWindow : FluentWindow
         string dacStr = p.Interpolation switch
         {
             InterpolationType.Linear3DoHalfRate => "3DO Linear",
-            InterpolationType.Linear => "Raw Steps",
+            InterpolationType.RawSteps => "Raw Steps",
             InterpolationType.Gaussian4Point => "Gaussian",
+            InterpolationType.Linear => "Linear",
             _ => "Bypass"
         };
         string aliasStr = (SwitchAliasing.IsChecked == true) ? "Raw Aliased" : "Studio AA (Clean)";
-        string noiseType = (ComboNoiseProfile?.SelectedIndex == 1) ? "Tape" : "SPU";
+        string noiseType = (ComboNoiseProfile?.SelectedIndex) switch
+        {
+            0 => "Tape",
+            1 => "SPU",
+            _ => "Pure Hiss"
+        };
         string noiseStr = (p.SpuNoiseLevel > 0.001f) ? $"{noiseType} {(int)(p.SpuNoiseLevel * 100)}%" : "Clean";
+        string airStr = MathF.Abs(p.TrebleBoostDb) > 0.1f ? $" • Air {(p.TrebleBoostDb > 0 ? "+" : "")}{p.TrebleBoostDb:F1}dB" : "";
 
-        TxtStatBar.Text = $"{codecStr} • {p.SpuVoiceRate} Hz • {dacStr} • {aliasStr} • {noiseStr}";
+        TxtStatBar.Text = $"{codecStr} • {p.SpuVoiceRate} Hz • {dacStr} • {aliasStr} • {noiseStr}{airStr}";
     }
 
     private void ComboNoiseProfile_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!_isInitialized || _isUpdatingUiFromPreset) return;
-        _currentPreset.NoiseProfile = (ComboNoiseProfile.SelectedIndex == 1)
-            ? AnalogNoiseProfile.Cassette
-            : AnalogNoiseProfile.Console;
+        _currentPreset.NoiseProfile = ComboNoiseProfile.SelectedIndex switch
+        {
+            0 => AnalogNoiseProfile.Cassette,
+            1 => AnalogNoiseProfile.Console,
+            _ => AnalogNoiseProfile.PureHiss
+        };
         UpdateMetrics(_currentPreset);
     }
 
@@ -245,8 +289,9 @@ public partial class MainWindow : FluentWindow
         _currentPreset.Interpolation = ComboInterp.SelectedIndex switch
         {
             0 => InterpolationType.Linear3DoHalfRate,
-            1 => InterpolationType.Linear,
+            1 => InterpolationType.RawSteps,
             2 => InterpolationType.Gaussian4Point,
+            3 => InterpolationType.Linear,
             _ => InterpolationType.Bypass
         };
         UpdateMetrics(_currentPreset);
@@ -263,14 +308,39 @@ public partial class MainWindow : FluentWindow
         }
         else if (sender == SliderFilterCutoff && TxtFilterCutoff != null)
         {
-            TxtFilterCutoff.Text = $"{SliderFilterCutoff.Value:F0} Hz";
-            _currentPreset.FilterCutoffHz = (float)SliderFilterCutoff.Value;
+            float val = (float)SliderFilterCutoff.Value;
+            TxtFilterCutoff.Text = (val >= 21900f) ? "22 000 Hz (Off)" : $"{val:F0} Hz";
+            _currentPreset.FilterCutoffHz = val;
+            _currentPreset.EnableAnalogFilter = val < 21900f;
+        }
+        else if (sender == SliderTrebleBoost && TxtTrebleBoost != null)
+        {
+            float val = (float)Math.Round(SliderTrebleBoost.Value * 2.0) / 2.0f;
+            TxtTrebleBoost.Text = (val > 0) ? $"+{val:F1} dB" : (val < 0) ? $"{val:F1} dB" : "0 dB";
+            _currentPreset.TrebleBoostDb = val;
         }
         else if (sender == SliderNoise && TxtNoise != null)
         {
             float val = (float)SliderNoise.Value;
             TxtNoise.Text = (val > 0.001f) ? $"{(int)(val * 100)}%" : "Off";
             _currentPreset.SpuNoiseLevel = val;
+        }
+        else if (sender == SliderNoiseTone && TxtNoiseTone != null)
+        {
+            float val = (float)Math.Round(SliderNoiseTone.Value * 10.0) / 10.0f;
+            TxtNoiseTone.Text = val switch
+            {
+                < -0.3f => $"Warm ({(int)(val * 100)}%)",
+                > 0.3f => $"Bright (+{(int)(val * 100)}%)",
+                _ => "Neutral"
+            };
+            _currentPreset.NoiseTone = val;
+        }
+        else if (sender == SliderNoiseHum && TxtNoiseHum != null)
+        {
+            float val = (float)SliderNoiseHum.Value;
+            TxtNoiseHum.Text = (val > 0.001f) ? $"{(int)(val * 100)}%" : "Off (0%)";
+            _currentPreset.NoiseHumLevel = val;
         }
         UpdateMetrics(_currentPreset);
     }
@@ -391,9 +461,17 @@ public partial class MainWindow : FluentWindow
         var selectedInterp = ComboInterp.SelectedIndex switch
         {
             0 => InterpolationType.Linear3DoHalfRate,
-            1 => InterpolationType.Linear,
+            1 => InterpolationType.RawSteps,
             2 => InterpolationType.Gaussian4Point,
+            3 => InterpolationType.Linear,
             _ => InterpolationType.Bypass
+        };
+
+        var selectedNoiseProfile = ComboNoiseProfile.SelectedIndex switch
+        {
+            0 => AnalogNoiseProfile.Cassette,
+            1 => AnalogNoiseProfile.Console,
+            _ => AnalogNoiseProfile.PureHiss
         };
 
         var preset = new AudioPreset
@@ -408,10 +486,13 @@ public partial class MainWindow : FluentWindow
                 ? FilterTopology.TwoPoleSallenKey
                 : FilterTopology.ThreePoleSpu,
             FilterCutoffHz = (float)SliderFilterCutoff.Value,
+            TrebleBoostDb = (float)SliderTrebleBoost.Value,
             PreFilterCutoffHz = (SwitchAliasing.IsChecked == true) ? 0f : 10500f,
             AuthenticAdpcmMode = true,
             SpuNoiseLevel = (float)SliderNoise.Value,
-            NoiseProfile = (ComboNoiseProfile.SelectedIndex == 1) ? AnalogNoiseProfile.Cassette : AnalogNoiseProfile.Console,
+            NoiseProfile = selectedNoiseProfile,
+            NoiseTone = (float)SliderNoiseTone.Value,
+            NoiseHumLevel = (float)SliderNoiseHum.Value,
             BusGlue = 0.0f,
             EnableTape = _currentPreset.EnableTape,
             TapeSettings = _currentPreset.TapeSettings,

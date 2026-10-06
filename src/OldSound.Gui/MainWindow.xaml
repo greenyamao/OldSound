@@ -3,8 +3,8 @@
                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                   xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                   Title="OldSound // 1990s Console &amp; Tape DSP"
-                  Height="590" Width="980"
-                  MinHeight="560" MinWidth="900"
+                  Height="650" Width="980"
+                  MinHeight="600" MinWidth="900"
                   WindowStartupLocation="CenterScreen"
                   WindowBackdropType="None"
                   ExtendsContentIntoTitleBar="True"
@@ -103,10 +103,10 @@
                 <!-- DAC CARD -->
                 <ui:Card Padding="14">
                     <StackPanel>
-                        <TextBlock Text="DAC &amp; RECONSTRUCTION" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,12"/>
+                        <TextBlock Text="DAC &amp; RECONSTRUCTION" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,10"/>
 
                         <!-- Model -->
-                        <Grid Margin="0,0,0,12">
+                        <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="65"/>
                                 <ColumnDefinition Width="*"/>
@@ -114,42 +114,74 @@
                             <TextBlock Text="Model:" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                             <ComboBox x:Name="ComboInterp" Grid.Column="1" SelectionChanged="ComboInterp_SelectionChanged">
                                 <ComboBoxItem Content="3DO Linear" Tag="3do"/>
-                                <ComboBoxItem Content="Raw Steps" Tag="linear"/>
+                                <ComboBoxItem Content="Raw Steps" Tag="raw"/>
                                 <ComboBoxItem Content="Gaussian" Tag="gauss"/>
+                                <ComboBoxItem Content="Linear (Smooth)" Tag="linear"/>
                                 <ComboBoxItem Content="Bypass" Tag="bypass"/>
                             </ComboBox>
                         </Grid>
 
                         <!-- LPF Cutoff -->
-                        <StackPanel Margin="0,0,0,12">
+                        <StackPanel Margin="0,0,0,10">
                             <Grid Margin="0,0,0,4">
                                 <TextBlock Text="LPF Cutoff:" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                                <TextBlock x:Name="TxtFilterCutoff" Text="20 500 Hz" HorizontalAlignment="Right" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="TxtFilterCutoff" Text="22 000 Hz (Off)" HorizontalAlignment="Right" FontWeight="SemiBold"/>
                             </Grid>
-                            <Slider x:Name="SliderFilterCutoff" Minimum="4000" Maximum="22000" Value="20500" 
+                            <Slider x:Name="SliderFilterCutoff" Minimum="4000" Maximum="22000" Value="22000" 
                                     ValueChanged="Slider_ValueChanged"/>
                         </StackPanel>
 
-                        <!-- Noise Model & Floor -->
+                        <!-- HF Treble / Air Boost -->
+                        <StackPanel Margin="0,0,0,10">
+                            <Grid Margin="0,0,0,4">
+                                <TextBlock Text="HF Treble / Air:" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                <TextBlock x:Name="TxtTrebleBoost" Text="0 dB" HorizontalAlignment="Right" FontWeight="SemiBold"/>
+                            </Grid>
+                            <Slider x:Name="SliderTrebleBoost" Minimum="-6" Maximum="12" Value="0" SmallChange="0.5" 
+                                    ValueChanged="Slider_ValueChanged"/>
+                        </StackPanel>
+
+                        <!-- Noise Model & Controls -->
                         <StackPanel>
-                            <Grid Margin="0,0,0,10">
+                            <Grid Margin="0,0,0,8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="65"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="Noise:" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                                 <ComboBox x:Name="ComboNoiseProfile" Grid.Column="1" SelectionChanged="ComboNoiseProfile_SelectionChanged">
-                                    <ComboBoxItem Content="Console (SPU)" Tag="console"/>
                                     <ComboBoxItem Content="Cassette (Tape)" Tag="tape"/>
+                                    <ComboBoxItem Content="Console (SPU)" Tag="console"/>
+                                    <ComboBoxItem Content="Pure Hiss (Flat)" Tag="pure"/>
                                 </ComboBox>
                             </Grid>
 
-                            <Grid Margin="0,0,0,4">
-                                <TextBlock Text="Noise Floor:" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                                <TextBlock x:Name="TxtNoise" Text="Off" HorizontalAlignment="Right" FontWeight="SemiBold"/>
-                            </Grid>
-                            <Slider x:Name="SliderNoise" Minimum="0" Maximum="1" Value="0" 
-                                    ValueChanged="Slider_ValueChanged"/>
+                            <StackPanel Margin="0,0,0,8">
+                                <Grid Margin="0,0,0,4">
+                                    <TextBlock Text="Noise Floor:" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                    <TextBlock x:Name="TxtNoise" Text="20%" HorizontalAlignment="Right" FontWeight="SemiBold"/>
+                                </Grid>
+                                <Slider x:Name="SliderNoise" Minimum="0" Maximum="1" Value="0.2" 
+                                        ValueChanged="Slider_ValueChanged"/>
+                            </StackPanel>
+
+                            <StackPanel Margin="0,0,0,8">
+                                <Grid Margin="0,0,0,4">
+                                    <TextBlock Text="Noise Tone:" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                    <TextBlock x:Name="TxtNoiseTone" Text="Neutral" HorizontalAlignment="Right" FontWeight="SemiBold"/>
+                                </Grid>
+                                <Slider x:Name="SliderNoiseTone" Minimum="-1" Maximum="1" Value="0" SmallChange="0.1" 
+                                        ValueChanged="Slider_ValueChanged"/>
+                            </StackPanel>
+
+                            <StackPanel>
+                                <Grid Margin="0,0,0,4">
+                                    <TextBlock Text="Hum &amp; Rumble:" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                    <TextBlock x:Name="TxtNoiseHum" Text="20%" HorizontalAlignment="Right" FontWeight="SemiBold"/>
+                                </Grid>
+                                <Slider x:Name="SliderNoiseHum" Minimum="0" Maximum="1" Value="0.2" SmallChange="0.05" 
+                                        ValueChanged="Slider_ValueChanged"/>
+                            </StackPanel>
                         </StackPanel>
                     </StackPanel>
                 </ui:Card>
