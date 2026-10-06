@@ -10,13 +10,59 @@ namespace OldSound.Core.Audio;
 /// </summary>
 public static class AudioBridge
 {
-    private static bool? _ffmpegAvailable;
+    private static string? _resolvedFFmpegPath;
 
-    public static bool IsFFmpegAvailable()
+    /// <summary>
+    /// Находит путь к бинарнику FFmpeg: сначала проверяет папку приложения, затем tools, затем AppData, и лишь в конце системный PATH.
+    /// </summary>
+    public static string? FindFFmpegBinary()
     {
-        if (_ffmpegAvailable.HasValue)
-            return _ffmpegAvailable.Value;
+        if (_resolvedFFmpegPath != null)
+            return _resolvedFFmpegPath;
 
+        // 1. Рядом с исполняемым файлом (portable dist)
+        string appDir = AppContext.BaseDirectory;
+        string localPath = Path.Combine(appDir, "ffmpeg.exe");
+        if (File.Exists(localPath))
+        {
+            _resolvedFFmpegPath = localPath;
+            return _resolvedFFmpegPath;
+        }
+
+        // 2. В подпапках tools или bin
+        string toolsPath = Path.Combine(appDir, "tools", "ffmpeg.exe");
+        if (File.Exists(toolsPath))
+        {
+            _resolvedFFmpegPath = toolsPath;
+            return _resolvedFFmpegPath;
+        }
+
+        string binPath = Path.Combine(appDir, "bin", "ffmpeg.exe");
+        if (File.Exists(binPath))
+        {
+            _resolvedFFmpegPath = binPath;
+            return _resolvedFFmpegPath;
+        }
+
+        // 3. В профиле пользователя %LOCALAPPDATA%\OldSound\ffmpeg.exe
+        string appDataPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "OldSound", "ffmpeg.exe");
+        if (File.Exists(appDataPath))
+        {
+            _resolvedFFmpegPath = appDataPath;
+            return _resolvedFFmpegPath;
+        }
+
+        // 4. Автоматическая распаковка встроенного в сборку FFmpeg (Offline Monolithic)
+        string? extracted = TryExtractEmbeddedFFmpeg(appDataPath);
+        if (extracted != null && File.Exists(extracted))
+        {
+            _resolvedFFmpegPath = extracted;
+            return _resolvedFFmpegPath;
+        }
+
+        // 5. Проверка системного PATH
         try
         {
             var psi = new ProcessStartInfo
@@ -31,21 +77,80 @@ public static class AudioBridge
             using var proc = Process.Start(psi);
             if (proc != null)
             {
-                proc.WaitForExit(2000);
-                _ffmpegAvailable = proc.ExitCode == 0;
+                proc.WaitForExit(1500);
+                if (proc.ExitCode == 0)
+                {
+                    _resolvedFFmpegPath = "ffmpeg";
+                    return _resolvedFFmpegPath;
+                }
             }
-            else
+        }
+        catch { }
+
+        return null;
+    }
+
+    private static string? TryExtractEmbeddedFFmpeg(string targetPath)
+    {
+        try
+        {
+            var asm = typeof(AudioBridge).Assembly;
+            string resName = "OldSound.Core.Resources.ffmpeg.exe.gz";
+            using var stream = asm.GetManifestResourceStream(resName);
+            if (stream == null)
             {
-                _ffmpegAvailable = false;
+                string? matchedName = asm.GetManifestResourceNames()
+                    .FirstOrDefault(n => n.EndsWith("ffmpeg.exe.gz", StringComparison.OrdinalIgnoreCase));
+                if (matchedName == null) return null;
+                using var fallbackStream = asm.GetManifestResourceStream(matchedName);
+                if (fallbackStream == null) return null;
+                return ExtractGzStream(fallbackStream, targetPath);
             }
+
+            return ExtractGzStream(stream, targetPath);
         }
         catch
         {
-            _ffmpegAvailable = false;
+            return null;
+        }
+    }
+
+    private static string? ExtractGzStream(Stream gzStream, string targetPath)
+    {
+        string? dir = Path.GetDirectoryName(targetPath);
+        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+        {
+            Directory.CreateDirectory(dir);
         }
 
-        return _ffmpegAvailable.Value;
+        string tempFile = targetPath + ".tmp_" + Guid.NewGuid().ToString("N");
+        try
+        {
+            using (var decompressor = new System.IO.Compression.GZipStream(gzStream, System.IO.Compression.CompressionMode.Decompress))
+            using (var outFs = File.Create(tempFile))
+            {
+                decompressor.CopyTo(outFs);
+            }
+
+            if (File.Exists(targetPath))
+            {
+                try { File.Delete(targetPath); } catch { }
+            }
+
+            File.Move(tempFile, targetPath, overwrite: true);
+            return targetPath;
+        }
+        catch
+        {
+            if (File.Exists(tempFile))
+            {
+                try { File.Delete(tempFile); } catch { }
+            }
+            return null;
+        }
     }
+
+    public static bool IsFFmpegAvailable() => FindFFmpegBinary() != null;
 
     /// <summary>
     /// Загружает аудиофайл любого поддерживаемого формата в память.
@@ -63,13 +168,14 @@ public static class AudioBridge
             return WavCodec.Read(stream);
         }
 
-        if (!IsFFmpegAvailable())
-            throw new InvalidOperationException($"Для открытия формата '{ext}' требуется установленный в PATH FFmpeg.");
+        string? ffmpegPath = FindFFmpegBinary();
+        if (ffmpegPath == null)
+            throw new InvalidOperationException($"Для открытия формата '{ext}' требуется FFmpeg (поместите ffmpeg.exe рядом с приложением или добавьте в PATH).");
 
         // Декодируем в WAV поток через FFmpeg
         var psi = new ProcessStartInfo
         {
-            FileName = "ffmpeg",
+            FileName = ffmpegPath,
             Arguments = $"-i \"{filePath}\" -f wav -",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -114,8 +220,9 @@ public static class AudioBridge
             return;
         }
 
-        if (!IsFFmpegAvailable())
-            throw new InvalidOperationException($"Для кодирования в формат '{ext}' требуется установленный в PATH FFmpeg.");
+        string? ffmpegPath = FindFFmpegBinary();
+        if (ffmpegPath == null)
+            throw new InvalidOperationException($"Для кодирования в формат '{ext}' требуется FFmpeg (поместите ffmpeg.exe рядом с приложением или добавьте в PATH).");
 
         // Сначала генерируем WAV в памяти
         using var wavMs = new MemoryStream();
@@ -133,7 +240,7 @@ public static class AudioBridge
 
         var psi = new ProcessStartInfo
         {
-            FileName = "ffmpeg",
+            FileName = ffmpegPath,
             Arguments = $"-y -f wav -i - {extraArgs} \"{filePath}\"",
             RedirectStandardInput = true,
             RedirectStandardError = true,

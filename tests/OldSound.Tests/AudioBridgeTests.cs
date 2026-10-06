@@ -32,12 +32,28 @@ public class AudioBridgeTests
                 buffer.GetChannelSpan(c).Slice(0, testSamples).CopyTo(slice.GetChannelSpan(c));
             }
 
-            var preset = PresetRegistry.Get("psx-xa-37k");
+            var preset = PresetRegistry.Get("four-sight-1995");
             var processed = RetroAudioPipeline.Process(slice, preset);
 
             Assert.Equal(buffer.Channels, processed.Channels);
             Assert.Equal(44100, processed.SampleRate);
             Assert.True(processed.LengthSamples > 0);
         }
+    }
+
+    [Fact]
+    public void FindFFmpegBinary_WhenPresent_ResolvesPath()
+    {
+        string? ffmpeg = AudioBridge.FindFFmpegBinary();
+        Assert.NotNull(ffmpeg);
+        Assert.True(ffmpeg.Length > 0);
+    }
+
+    [Fact]
+    public void EmbeddedFFmpegResource_IsPresentInAssembly()
+    {
+        var asm = typeof(AudioBridge).Assembly;
+        var names = asm.GetManifestResourceNames();
+        Assert.Contains(names, n => n.EndsWith("ffmpeg.exe.gz", System.StringComparison.OrdinalIgnoreCase));
     }
 }
