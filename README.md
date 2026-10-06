@@ -1,5 +1,7 @@
 # OldSound
 
+![OldSound GUI](example/gui.png)
+
 Audio processing tool for reproducing authentic digital compression and hardware signal paths of mid-1990s consoles (3DO, PS1) and compact cassette tape.
 
 Unlike generic bitcrushers, OldSound models the exact historical compression and reconstruction algorithms:
