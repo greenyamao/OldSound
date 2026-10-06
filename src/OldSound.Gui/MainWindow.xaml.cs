@@ -176,6 +176,11 @@ public partial class MainWindow : FluentWindow
             SliderNoise.Value = p.SpuNoiseLevel;
             TxtNoise.Text = (p.SpuNoiseLevel > 0.001f) ? $"{(int)(p.SpuNoiseLevel * 100)}%" : "Off";
 
+            if (TxtPresetDescription != null)
+            {
+                TxtPresetDescription.Text = p.Description;
+            }
+
             UpdateMetrics(p);
         }
         finally
