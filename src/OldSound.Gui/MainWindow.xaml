@@ -6,7 +6,7 @@
                   Height="700" Width="980"
                   MinHeight="600" MinWidth="860"
                   WindowStartupLocation="CenterScreen"
-                  WindowBackdropType="Mica"
+                  WindowBackdropType="Auto"
                   ExtendsContentIntoTitleBar="True"
                   AllowDrop="True"
                   Drop="Window_Drop"
@@ -271,9 +271,15 @@
                             <TextBlock x:Name="TxtStatBar" Text="4-Bit • 18.9k • Clean Digital" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
 
                             <!-- Actions -->
-                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="Format:" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,8,0" FontSize="12"/>
+                                <ComboBox x:Name="ComboExportFormat" Width="145" Margin="0,0,10,0">
+                                    <ComboBoxItem Content="MP3 (320 kbps)" Tag="mp3" IsSelected="True"/>
+                                    <ComboBoxItem Content="FLAC Lossless" Tag="flac"/>
+                                    <ComboBoxItem Content="WAV 16-bit PCM" Tag="wav"/>
+                                </ComboBox>
                                 <ui:Button x:Name="BtnOpenFolder" Content="Folder" Click="BtnOpenFolder_Click" IsEnabled="False" Margin="0,0,8,0"/>
-                                <ui:Button x:Name="BtnSaveAs" Appearance="Primary" Content="Export WAV..." Click="BtnSaveAs_Click" IsEnabled="False"/>
+                                <ui:Button x:Name="BtnSaveAs" Appearance="Primary" Content="Export Audio..." Click="BtnSaveAs_Click" IsEnabled="False"/>
                             </StackPanel>
                         </Grid>
                     </Grid>

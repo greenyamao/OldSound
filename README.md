@@ -28,4 +28,4 @@ Standalone binary: `dist/OldSound.Gui.exe`.
 - Headroom safety: Automatic peak limiting (-1.4 dBFS headroom) preventing digital clipping.
 - Instant A/B comparison: Seamless toggle between Original and Processed audio.
 - Raw Aliasing mode: Toggleable anti-aliasing filter to compare clean 3DO reproduction against raw decimation crunch.
-- Supported audio formats: WAV, MP3, FLAC, OGG, AIFF.
+- Supported audio formats: WAV, MP3, FLAC, OGG, AIFF (export presets: MP3 320 kbps, FLAC lossless, 16-bit WAV PCM).

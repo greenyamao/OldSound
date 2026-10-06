@@ -79,6 +79,8 @@ public static class Program
             "[bold yellow]Options:[/]\n" +
             "  [green]--preset <name>[/]       Audio profile (e.g. [yellow]four-sight-1995[/], [yellow]ps1-spu-1994[/])\n" +
             "  [green]-o, --output <path>[/]   Output file or directory path\n" +
+            "  [green]-f, --format <ext>[/]    Output format: [yellow]mp3[/] (320k), [yellow]flac[/], [yellow]wav[/]\n" +
+            "  [green]-b, --bitrate <kbps>[/]  MP3 bitrate in kbps (default [yellow]320[/])\n" +
             "  [green]--codec <type>[/]         Codec: [yellow]adpcm[/], [yellow]sdx2[/], [yellow]bypass[/]\n" +
             "  [green]--interp <type>[/]        DAC interpolation: [yellow]gauss[/], [yellow]linear3do[/], [yellow]linear[/]\n" +
             "  [green]--rate <hz>[/]            Console voice sample rate (44100, 37800, 22050, 18900, 11025)\n" +
@@ -93,10 +95,11 @@ public static class Program
             "  [green]--hiss <val>[/]           Tape hiss level (0.0 .. 1.0)\n" +
             "  [green]--pattern <mask>[/]      File search pattern for batch (e.g. [yellow]*.mp3[/], default [yellow]*.*[/])\n\n" +
             "[bold yellow]Examples:[/]\n" +
-            "  oldsound process track.wav -o track_3do.wav --preset four-sight-1995\n" +
+            "  oldsound process track.wav -o track_3do.mp3 --preset four-sight-1995\n" +
+            "  oldsound process track.wav -f flac --preset four-sight-1995\n" +
             "  oldsound process music.flac -o music_ps1.mp3 --preset ps1-spu-1994\n" +
             "  oldsound process ambient.mp3 -o ambient_tape.mp3 --preset cassette-type1\n" +
-            "  oldsound batch ./music -o ./music_retro --preset four-sight-1995"
+            "  oldsound batch ./music -o ./music_retro -f mp3 --preset four-sight-1995"
         ))
         {
             Header = new PanelHeader("[bold white]OldSound Command Help[/]"),
@@ -163,6 +166,8 @@ public static class Program
         InterpolationType? overrideInterp = null;
         float? overrideDrive = null;
         float? overrideHiss = null;
+        string? overrideFormat = null;
+        int mp3Bitrate = 320;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -171,6 +176,10 @@ public static class Program
                 outputPath = args[++i];
             else if ((a == "-p" || a == "--preset") && i + 1 < args.Length)
                 presetName = args[++i];
+            else if ((a == "-f" || a == "--format") && i + 1 < args.Length)
+                overrideFormat = args[++i].ToLowerInvariant().TrimStart('.');
+            else if ((a == "-b" || a == "--bitrate") && i + 1 < args.Length)
+                mp3Bitrate = int.Parse(args[++i]);
             else if (a == "--codec" && i + 1 < args.Length)
             {
                 string c = args[++i].ToLowerInvariant();
@@ -235,7 +244,8 @@ public static class Program
         {
             string dir = Path.GetDirectoryName(inputPath) ?? "";
             string nameNoExt = Path.GetFileNameWithoutExtension(inputPath);
-            string ext = Path.GetExtension(inputPath);
+            string ext = overrideFormat != null ? $".{overrideFormat}" : Path.GetExtension(inputPath);
+            if (string.IsNullOrEmpty(ext)) ext = ".mp3";
             outputPath = Path.Combine(dir, $"{nameNoExt}_{presetName}{ext}");
         }
 
@@ -270,13 +280,18 @@ public static class Program
                 ctx.Status($"Applying authentic retro signal path ({preset.Codec} {preset.SpuVoiceRate} Hz, DAC {preset.Interpolation}, LPF {preset.FilterCutoffHz:F0} Hz)...");
                 outBuffer = RetroAudioPipeline.Process(inBuffer, preset);
 
-                ctx.Status("Encoding and saving output file...");
-                AudioBridge.Save(outBuffer, outputPath);
+                ctx.Status($"Encoding and saving output file ({Path.GetExtension(outputPath).ToUpperInvariant()})...");
+                AudioBridge.Save(outBuffer, outputPath, mp3BitrateKbps: mp3Bitrate);
             });
 
         sw.Stop();
+        long outSizeBytes = File.Exists(outputPath) ? new FileInfo(outputPath).Length : 0;
+        string sizeStr = outSizeBytes > 1024 * 1024
+            ? $"{(outSizeBytes / (1024.0 * 1024.0)):F1} MB"
+            : $"{(outSizeBytes / 1024.0):F0} KB";
+
         AnsiConsole.MarkupLine($"\n[bold green]✓ Done![/] Processed {inBuffer.LengthSamples} samples ({inBuffer.Channels} channels) in [bold yellow]{sw.Elapsed.TotalSeconds:F2}s[/].");
-        AnsiConsole.MarkupLine($"File saved: [bold underline white]{Path.GetFullPath(outputPath)}[/]\n");
+        AnsiConsole.MarkupLine($"File saved: [bold underline white]{Path.GetFullPath(outputPath)}[/] ({sizeStr})\n");
 
         return 0;
     }
@@ -287,6 +302,8 @@ public static class Program
         string? outputDir = null;
         string presetName = PresetRegistry.DefaultPresetName;
         string pattern = "*.*";
+        string? overrideFormat = null;
+        int mp3Bitrate = 320;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -295,6 +312,10 @@ public static class Program
                 outputDir = args[++i];
             else if ((a == "-p" || a == "--preset") && i + 1 < args.Length)
                 presetName = args[++i];
+            else if ((a == "-f" || a == "--format") && i + 1 < args.Length)
+                overrideFormat = args[++i].ToLowerInvariant().TrimStart('.');
+            else if ((a == "-b" || a == "--bitrate") && i + 1 < args.Length)
+                mp3Bitrate = int.Parse(args[++i]);
             else if (a == "--pattern" && i + 1 < args.Length)
                 pattern = args[++i];
             else if (!a.StartsWith("-") && inputDir == null)
@@ -352,10 +373,14 @@ public static class Program
                     string fileName = Path.GetFileName(file);
                     task.Description = $"[green]{fileName}[/]";
 
-                    string outFilePath = Path.Combine(outputDir, fileName);
+                    string outFileName = overrideFormat != null
+                        ? Path.ChangeExtension(fileName, "." + overrideFormat)
+                        : fileName;
+
+                    string outFilePath = Path.Combine(outputDir, outFileName);
                     var inBuf = AudioBridge.Load(file);
                     var outBuf = RetroAudioPipeline.Process(inBuf, preset);
-                    AudioBridge.Save(outBuf, outFilePath);
+                    AudioBridge.Save(outBuf, outFilePath, mp3BitrateKbps: mp3Bitrate);
 
                     task.Increment(1);
                 }

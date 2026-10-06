@@ -7,6 +7,23 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationTitle>OldSound // Retro Console &amp; Tape DSP</ApplicationTitle>
+
+    <!-- Standalone Single-File Configuration -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+
+    <!-- Assembly & Product Metadata -->
+    <AssemblyTitle>OldSound</AssemblyTitle>
+    <Description>OldSound Retro Audio DSP (3DO SDX2, PS1 SPU ADPCM, Cassette Tape)</Description>
+    <Company>greenyamao</Company>
+    <Product>OldSound</Product>
+    <Copyright>Copyright © 2026 greenyamao</Copyright>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
   </PropertyGroup>
 
   <ItemGroup>

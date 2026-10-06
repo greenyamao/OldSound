@@ -56,4 +56,40 @@ public class AudioBridgeTests
         var names = asm.GetManifestResourceNames();
         Assert.Contains(names, n => n.EndsWith("ffmpeg.exe.gz", System.StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public void Save_Mp3AndFlac_EncodesValidAudioFiles()
+    {
+        // 1-second stereo tone
+        var buffer = new AudioBuffer(2, 44100, 44100);
+        for (int i = 0; i < 44100; i++)
+        {
+            float s = System.MathF.Sin(2.0f * System.MathF.PI * 440.0f * i / 44100.0f) * 0.5f;
+            buffer.GetChannelSpan(0)[i] = s;
+            buffer.GetChannelSpan(1)[i] = s;
+        }
+
+        string tempMp3 = Path.Combine(Path.GetTempPath(), $"test_save_{System.Guid.NewGuid():N}.mp3");
+        string tempFlac = Path.Combine(Path.GetTempPath(), $"test_save_{System.Guid.NewGuid():N}.flac");
+
+        try
+        {
+            AudioBridge.Save(buffer, tempMp3, mp3BitrateKbps: 320);
+            Assert.True(File.Exists(tempMp3));
+            Assert.True(new FileInfo(tempMp3).Length > 10000);
+
+            var reloaded = AudioBridge.Load(tempMp3);
+            Assert.Equal(2, reloaded.Channels);
+            Assert.Equal(44100, reloaded.SampleRate);
+
+            AudioBridge.Save(buffer, tempFlac);
+            Assert.True(File.Exists(tempFlac));
+            Assert.True(new FileInfo(tempFlac).Length > 5000);
+        }
+        finally
+        {
+            try { File.Delete(tempMp3); } catch { }
+            try { File.Delete(tempFlac); } catch { }
+        }
+    }
 }

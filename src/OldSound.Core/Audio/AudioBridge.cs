@@ -177,7 +177,7 @@ public static class AudioBridge
         var psi = new ProcessStartInfo
         {
             FileName = ffmpegPath,
-            Arguments = $"-i \"{filePath}\" -f wav -",
+            Arguments = $"-loglevel error -i \"{filePath}\" -f wav -",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -187,13 +187,15 @@ public static class AudioBridge
         using var proc = Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to launch FFmpeg process.");
 
+        var errTask = System.Threading.Tasks.Task.Run(() => proc.StandardError.ReadToEnd());
+
         using var ms = new MemoryStream();
         proc.StandardOutput.BaseStream.CopyTo(ms);
         proc.WaitForExit();
+        string err = errTask.GetAwaiter().GetResult();
 
         if (proc.ExitCode != 0)
         {
-            string err = proc.StandardError.ReadToEnd();
             throw new InvalidOperationException($"FFmpeg decoding error: {err}");
         }
 
@@ -202,7 +204,7 @@ public static class AudioBridge
     }
 
     /// <summary>
-    /// Saves audio buffer to target file format.
+    /// Saves audio buffer to target file format (MP3, FLAC, WAV, OGG, AAC).
     /// </summary>
     public static void Save(AudioBuffer buffer, string filePath, int mp3BitrateKbps = 320, int wavBitsPerSample = 16)
     {
@@ -232,9 +234,9 @@ public static class AudioBridge
 
         string extraArgs = ext switch
         {
-            ".mp3" => $"-b:a {mp3BitrateKbps}k",
-            ".ogg" => "-c:a libvorbis -q:a 7",
+            ".mp3" => $"-c:a libmp3lame -b:a {mp3BitrateKbps}k",
             ".flac" => "-c:a flac",
+            ".ogg" => "-c:a libvorbis -q:a 7",
             ".m4a" or ".aac" => "-c:a aac -b:a 256k",
             _ => ""
         };
@@ -242,7 +244,7 @@ public static class AudioBridge
         var psi = new ProcessStartInfo
         {
             FileName = ffmpegPath,
-            Arguments = $"-y -f wav -i - {extraArgs} \"{filePath}\"",
+            Arguments = $"-y -loglevel error -f wav -i - {extraArgs} \"{filePath}\"",
             RedirectStandardInput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -252,16 +254,25 @@ public static class AudioBridge
         using var proc = Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to launch FFmpeg process for writing.");
 
-        wavMs.CopyTo(proc.StandardInput.BaseStream);
-        proc.StandardInput.BaseStream.Flush();
-        proc.StandardInput.BaseStream.Close();
+        // Read stderr in background task to avoid pipe buffer deadlock
+        var errTask = System.Threading.Tasks.Task.Run(() => proc.StandardError.ReadToEnd());
+
+        try
+        {
+            wavMs.CopyTo(proc.StandardInput.BaseStream);
+            proc.StandardInput.BaseStream.Flush();
+        }
+        finally
+        {
+            proc.StandardInput.BaseStream.Close();
+        }
 
         proc.WaitForExit();
+        string err = errTask.GetAwaiter().GetResult();
 
         if (proc.ExitCode != 0)
         {
-            string err = proc.StandardError.ReadToEnd();
-            throw new InvalidOperationException($"FFmpeg encoding error: {err}");
+            throw new InvalidOperationException($"FFmpeg encoding error (exit code {proc.ExitCode}): {err}");
         }
     }
 }

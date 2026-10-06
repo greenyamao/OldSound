@@ -573,14 +573,32 @@ public partial class MainWindow : FluentWindow
 
     private void BtnSaveAs_Click(object sender, RoutedEventArgs e)
     {
-        if (_outputBuffer == null || string.IsNullOrEmpty(_tempProcessedPath)) return;
+        if (_outputBuffer == null) return;
 
         string origName = Path.GetFileNameWithoutExtension(_inputFilePath ?? "audio");
+        string selectedTag = (ComboExportFormat?.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "mp3";
+
+        string defaultExt = selectedTag switch
+        {
+            "flac" => ".flac",
+            "wav" => ".wav",
+            _ => ".mp3"
+        };
+
+        int filterIndex = selectedTag switch
+        {
+            "flac" => 2,
+            "wav" => 3,
+            _ => 1
+        };
+
         var dlg = new SaveFileDialog
         {
-            Title = "Export Audio",
-            FileName = $"{origName}_foursight.wav",
-            Filter = "WAV PCM 16-bit (*.wav)|*.wav|MP3 Audio (*.mp3)|*.mp3|FLAC Lossless (*.flac)|*.flac"
+            Title = "Export Retro Audio",
+            FileName = $"{origName}_{_currentPreset.Name}{defaultExt}",
+            DefaultExt = defaultExt,
+            Filter = "MP3 Audio (320 kbps) (*.mp3)|*.mp3|FLAC Lossless (*.flac)|*.flac|WAV PCM 16-bit (*.wav)|*.wav|All Supported Audio|*.mp3;*.flac;*.wav",
+            FilterIndex = filterIndex
         };
 
         if (dlg.ShowDialog() == true)
@@ -590,22 +608,36 @@ public partial class MainWindow : FluentWindow
 
             try
             {
-                if (ext == ".wav")
+                TxtStatus.Text = "Exporting...";
+                TxtStatusDetails.Text = $"Saving {Path.GetFileName(outPath)}...";
+
+                if (ext == ".wav" && !string.IsNullOrEmpty(_tempProcessedPath) && File.Exists(_tempProcessedPath))
                 {
                     File.Copy(_tempProcessedPath, outPath, overwrite: true);
                 }
                 else
                 {
-                    AudioBridge.Save(_outputBuffer, outPath);
+                    AudioBridge.Save(_outputBuffer, outPath, mp3BitrateKbps: 320);
                 }
 
                 _lastSavedPath = outPath;
+                long fileSizeBytes = new FileInfo(outPath).Length;
+                string sizeStr = (fileSizeBytes >= 1024 * 1024)
+                    ? $"{(fileSizeBytes / (1024.0 * 1024.0)):F1} MB"
+                    : $"{(fileSizeBytes / 1024.0):F0} KB";
+
                 TxtStatus.Text = "Exported";
-                TxtStatusDetails.Text = Path.GetFileName(outPath);
-                System.Windows.MessageBox.Show($"File exported successfully:\n{outPath}", "Export Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                TxtStatusDetails.Text = $"{Path.GetFileName(outPath)} ({sizeStr})";
+                System.Windows.MessageBox.Show(
+                    $"File exported successfully:\n{outPath}\n\nSize: {sizeStr}",
+                    "Export Complete",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
+                TxtStatus.Text = "Export Error";
+                TxtStatusDetails.Text = ex.Message;
                 System.Windows.MessageBox.Show($"Export error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
