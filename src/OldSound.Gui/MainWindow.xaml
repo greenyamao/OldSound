@@ -3,8 +3,8 @@
                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                   xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                   Title="OldSound // 1990s Console &amp; Tape DSP"
-                  Height="720" Width="1040"
-                  MinHeight="640" MinWidth="920"
+                  Height="590" Width="980"
+                  MinHeight="560" MinWidth="900"
                   WindowStartupLocation="CenterScreen"
                   WindowBackdropType="None"
                   ExtendsContentIntoTitleBar="True"
@@ -22,12 +22,12 @@
         <!-- TITLE BAR -->
         <ui:TitleBar Grid.Row="0" Title="OldSound // 1990s Console &amp; Tape DSP" Padding="14,6,14,6"/>
 
-        <!-- TOP BAR: PRESET & PRESET DESCRIPTION -->
-        <Border Grid.Row="1" Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" Padding="20,10">
+        <!-- TOP BAR: PRESET & PROFILE CHIP -->
+        <Border Grid.Row="1" Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" Padding="18,8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="310"/>
+                    <ColumnDefinition Width="280"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
@@ -36,22 +36,26 @@
 
                 <ComboBox x:Name="ComboPresets" Grid.Column="1" SelectionChanged="ComboPresets_SelectionChanged" VerticalAlignment="Center"/>
 
-                <ui:Button x:Name="BtnReset" Grid.Column="2" Content="Reset" Click="BtnReset_Click" Margin="10,0,16,0" VerticalAlignment="Center"/>
+                <ui:Button x:Name="BtnReset" Grid.Column="2" Content="Reset" Click="BtnReset_Click" Margin="10,0,0,0" VerticalAlignment="Center"/>
 
-                <!-- Preset Description / Specs Chip -->
-                <TextBlock x:Name="TxtPresetDescription" Grid.Column="3" 
-                           Text="1995 3DO Opera sound path (SDX2 Delta Codec, FIR Pre-filter, Sallen-Key LPF)" 
-                           VerticalAlignment="Center" HorizontalAlignment="Right" 
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" 
-                           FontSize="12" TextTrimming="CharacterEllipsis"/>
+                <!-- Compact Profile Chip on the right (with full description in tooltip) -->
+                <Border Grid.Column="3" HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" 
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" 
+                        BorderThickness="1" CornerRadius="6" Padding="10,4">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="PROFILE:" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextFillColorTertiaryBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock x:Name="TxtPresetChip" Text="3DO Opera 1995 (SDX2)" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
             </Grid>
         </Border>
 
         <!-- MAIN WORKSPACE -->
-        <Grid Grid.Row="2" Margin="20,16,20,20">
+        <Grid Grid.Row="2" Margin="18,14,18,16" VerticalAlignment="Top">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="360"/>
-                <ColumnDefinition Width="18"/>
+                <ColumnDefinition Width="350"/>
+                <ColumnDefinition Width="14"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
@@ -59,12 +63,12 @@
             <StackPanel Grid.Column="0">
 
                 <!-- CODEC CARD -->
-                <ui:Card Padding="16" Margin="0,0,0,14">
+                <ui:Card Padding="14" Margin="0,0,0,12">
                     <StackPanel>
-                        <TextBlock Text="CODEC" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,14"/>
+                        <TextBlock Text="CODEC" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,12"/>
 
                         <!-- Type -->
-                        <Grid Margin="0,0,0,14">
+                        <Grid Margin="0,0,0,12">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="65"/>
                                 <ColumnDefinition Width="*"/>
@@ -78,7 +82,7 @@
                         </Grid>
 
                         <!-- Clock Rate -->
-                        <StackPanel Margin="0,0,0,14">
+                        <StackPanel Margin="0,0,0,12">
                             <Grid Margin="0,0,0,4">
                                 <TextBlock Text="Rate:" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                                 <TextBlock x:Name="TxtVoiceRate" Text="22 050 Hz" HorizontalAlignment="Right" FontWeight="SemiBold"/>
@@ -88,7 +92,7 @@
                         </StackPanel>
 
                         <!-- Aliasing -->
-                        <Grid Margin="0,0,0,2">
+                        <Grid>
                             <TextBlock Text="Raw Aliasing (Bitcrush):" VerticalAlignment="Center" FontWeight="SemiBold"
                                        ToolTip="Enables harsh raw aliasing without filtering (cheap bitcrusher effect). For authentic 3DO Four-Sight sound this should be OFF (studio FIR anti-aliasing active)."/>
                             <ui:ToggleSwitch x:Name="SwitchAliasing" HorizontalAlignment="Right" IsChecked="False" Click="SwitchAliasing_Click"/>
@@ -97,12 +101,12 @@
                 </ui:Card>
 
                 <!-- DAC CARD -->
-                <ui:Card Padding="16">
+                <ui:Card Padding="14">
                     <StackPanel>
-                        <TextBlock Text="DAC &amp; RECONSTRUCTION" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,14"/>
+                        <TextBlock Text="DAC &amp; RECONSTRUCTION" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,12"/>
 
                         <!-- Model -->
-                        <Grid Margin="0,0,0,14">
+                        <Grid Margin="0,0,0,12">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="65"/>
                                 <ColumnDefinition Width="*"/>
@@ -117,7 +121,7 @@
                         </Grid>
 
                         <!-- LPF Cutoff -->
-                        <StackPanel Margin="0,0,0,14">
+                        <StackPanel Margin="0,0,0,12">
                             <Grid Margin="0,0,0,4">
                                 <TextBlock Text="LPF Cutoff:" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                                 <TextBlock x:Name="TxtFilterCutoff" Text="20 500 Hz" HorizontalAlignment="Right" FontWeight="SemiBold"/>
@@ -126,7 +130,7 @@
                                     ValueChanged="Slider_ValueChanged"/>
                         </StackPanel>
 
-                        <!-- Noise Model & Floor (Master Analog) -->
+                        <!-- Noise Model & Floor -->
                         <StackPanel>
                             <Grid Margin="0,0,0,10">
                                 <Grid.ColumnDefinitions>
@@ -152,20 +156,16 @@
 
             </StackPanel>
 
-            <!-- RIGHT COLUMN: INPUT & PLAYER -->
-            <Grid Grid.Column="2">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
+            <!-- RIGHT COLUMN: INPUT & PLAYER (MATCHES LEFT COLUMN HEIGHT) -->
+            <StackPanel Grid.Column="2">
 
-                <!-- INPUT CARD -->
-                <ui:Card Grid.Row="0" Padding="16" Margin="0,0,0,14">
+                <!-- INPUT & RENDER CARD -->
+                <ui:Card Padding="14" Margin="0,0,0,12">
                     <StackPanel>
-                        <TextBlock Text="INPUT &amp; RENDER" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,10"/>
+                        <TextBlock Text="INPUT &amp; RENDER" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,8"/>
 
                         <!-- Drop area -->
-                        <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16,12" Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}" Margin="0,0,0,12">
+                        <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="14,9" Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}" Margin="0,0,0,10">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -174,10 +174,10 @@
 
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock x:Name="TxtFileName" Text="Drop audio file here (MP3, WAV, FLAC, OGG, AIFF)" FontWeight="SemiBold" FontSize="13"/>
-                                    <TextBlock x:Name="TxtFileMeta" Text="No file loaded" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,3,0,0"/>
+                                    <TextBlock x:Name="TxtFileMeta" Text="No file loaded" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0"/>
                                 </StackPanel>
 
-                                <ui:Button Grid.Column="1" Content="Browse..." Click="BtnBrowse_Click" VerticalAlignment="Center" Height="34" Padding="16,0"/>
+                                <ui:Button Grid.Column="1" Content="Browse..." Click="BtnBrowse_Click" VerticalAlignment="Center" Height="32" Padding="14,0"/>
                             </Grid>
                         </Border>
 
@@ -190,103 +190,86 @@
 
                             <StackPanel VerticalAlignment="Center">
                                 <TextBlock x:Name="TxtStatus" Text="Ready" FontWeight="Bold" FontSize="13"/>
-                                <TextBlock x:Name="TxtStatusDetails" Text="Select file and click Render." FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0"/>
+                                <TextBlock x:Name="TxtStatusDetails" Text="Select file and click Render." FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,1,0,0"/>
                             </StackPanel>
 
-                            <ui:Button x:Name="BtnProcess" Grid.Column="1" Appearance="Primary" Height="36" Width="120" Content="Render" Click="BtnProcess_Click" IsEnabled="False" FontWeight="SemiBold" FontSize="13"/>
+                            <ui:Button x:Name="BtnProcess" Grid.Column="1" Appearance="Primary" Height="34" Width="110" Content="Render" Click="BtnProcess_Click" IsEnabled="False" FontWeight="SemiBold" FontSize="13"/>
                         </Grid>
 
-                        <ProgressBar x:Name="ProgressBarStatus" Height="3" Margin="0,10,0,0" IsIndeterminate="False" Visibility="Collapsed"/>
+                        <ProgressBar x:Name="ProgressBarStatus" Height="3" Margin="0,8,0,0" IsIndeterminate="False" Visibility="Collapsed"/>
                     </StackPanel>
                 </ui:Card>
 
                 <!-- PLAYER CARD (HERO DECK) -->
-                <ui:Card Grid.Row="1" Padding="18">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
+                <ui:Card Padding="14">
+                    <StackPanel>
 
                         <!-- HEADER: TITLE & A/B SWITCH -->
-                        <Grid Grid.Row="0" Margin="0,0,0,14">
+                        <Grid Margin="0,0,0,10">
                             <TextBlock Text="PLAYER &amp; A/B MONITOR" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/>
 
-                            <Border Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" HorizontalAlignment="Right" Padding="8,4">
+                            <Border Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6" HorizontalAlignment="Right" Padding="6,3">
                                 <StackPanel Orientation="Horizontal">
-                                    <RadioButton x:Name="RbSourceOriginal" Content="Original (A)" GroupName="DeckSource" Checked="AudioSource_Changed" Margin="4,0,10,0" IsEnabled="False" FontWeight="SemiBold"/>
-                                    <RadioButton x:Name="RbSourceProcessed" Content="Processed (B)" GroupName="DeckSource" Checked="AudioSource_Changed" Margin="0,0,4,0" IsEnabled="False" FontWeight="SemiBold"/>
+                                    <RadioButton x:Name="RbSourceOriginal" Content="Original (A)" GroupName="DeckSource" Checked="AudioSource_Changed" Margin="4,0,8,0" IsEnabled="False" FontWeight="SemiBold" FontSize="12"/>
+                                    <RadioButton x:Name="RbSourceProcessed" Content="Processed (B)" GroupName="DeckSource" Checked="AudioSource_Changed" Margin="0,0,4,0" IsEnabled="False" FontWeight="SemiBold" FontSize="12"/>
                                 </StackPanel>
                             </Border>
                         </Grid>
 
-                        <!-- CENTER HERO: TRANSPORT, CLOCK & VOLUME -->
-                        <Grid Grid.Row="1" VerticalAlignment="Center">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
+                        <!-- TRANSPORT BUTTONS, DIGITAL CLOCK & VOLUME -->
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
 
-                            <!-- TRANSPORT BUTTONS, DIGITAL CLOCK & VOLUME -->
-                            <Grid Margin="0,4,0,14">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
+                            <!-- Play & Stop Buttons -->
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                <ui:Button x:Name="BtnPlay" Appearance="Primary" Height="34" Width="84" Content="Play" Click="BtnPlay_Click" IsEnabled="False" Margin="0,0,6,0" FontSize="13" FontWeight="SemiBold"/>
+                                <ui:Button x:Name="BtnStop" Height="34" Width="64" Content="Stop" Click="BtnStop_Click" IsEnabled="False"/>
+                            </StackPanel>
 
-                                <!-- Play & Stop Buttons -->
-                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <ui:Button x:Name="BtnPlay" Appearance="Primary" Height="38" Width="96" Content="Play" Click="BtnPlay_Click" IsEnabled="False" Margin="0,0,8,0" FontSize="13" FontWeight="SemiBold"/>
-                                    <ui:Button x:Name="BtnStop" Height="38" Width="72" Content="Stop" Click="BtnStop_Click" IsEnabled="False"/>
+                            <!-- Digital Clock Readout -->
+                            <Border Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Background="#181A1D" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" 
+                                    BorderThickness="1" CornerRadius="6" Padding="12,4">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock x:Name="TxtTimeCurrent" Text="00:00" FontSize="16" FontWeight="Bold" FontFamily="Consolas, Cascadia Code, Segoe UI"/>
+                                    <TextBlock Text=" / " FontSize="13" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" Margin="5,0,5,0"/>
+                                    <TextBlock x:Name="TxtTimeTotal" Text="00:00" FontSize="13" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" FontFamily="Consolas, Cascadia Code, Segoe UI"/>
                                 </StackPanel>
+                            </Border>
 
-                                <!-- Digital Clock Readout -->
-                                <Border Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                        Background="#181A1D" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" 
-                                        BorderThickness="1" CornerRadius="6" Padding="14,6">
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock x:Name="TxtTimeCurrent" Text="00:00" FontSize="18" FontWeight="Bold" FontFamily="Consolas, Cascadia Code, Segoe UI"/>
-                                        <TextBlock Text=" / " FontSize="14" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" Margin="6,0,6,0"/>
-                                        <TextBlock x:Name="TxtTimeTotal" Text="00:00" FontSize="14" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" FontFamily="Consolas, Cascadia Code, Segoe UI"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <!-- Volume Slider -->
-                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="Vol:" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                    <Slider x:Name="SliderVolume" Width="95" Minimum="0" Maximum="1" Value="0.85" ValueChanged="SliderVolume_ValueChanged" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="TxtVolume" Text="85%" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="6,0,0,0" Width="36"/>
-                                </StackPanel>
-                            </Grid>
-
-                            <!-- TIMELINE SLIDER -->
-                            <Grid Grid.Row="1">
-                                <Slider x:Name="SliderTimeline" Minimum="0" Maximum="100" Value="0" 
-                                        PreviewMouseDown="SliderTimeline_PreviewMouseDown" 
-                                        PreviewMouseUp="SliderTimeline_PreviewMouseUp" 
-                                        ValueChanged="SliderTimeline_ValueChanged"/>
-                            </Grid>
+                            <!-- Volume Slider -->
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="Vol:" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <Slider x:Name="SliderVolume" Width="90" Minimum="0" Maximum="1" Value="0.85" ValueChanged="SliderVolume_ValueChanged" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="TxtVolume" Text="85%" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Margin="5,0,0,0" Width="32"/>
+                            </StackPanel>
                         </Grid>
 
+                        <!-- TIMELINE SLIDER -->
+                        <Slider x:Name="SliderTimeline" Minimum="0" Maximum="100" Value="0" 
+                                Margin="0,0,0,10"
+                                PreviewMouseDown="SliderTimeline_PreviewMouseDown" 
+                                PreviewMouseUp="SliderTimeline_PreviewMouseUp" 
+                                ValueChanged="SliderTimeline_ValueChanged"/>
+
                         <!-- DSP STATUS BADGE ROW -->
-                        <Border Grid.Row="2" Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}" 
+                        <Border Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}" 
                                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" 
-                                BorderThickness="1" CornerRadius="6" Padding="12,6" Margin="0,14,0,12">
-                            <Grid>
-                                <TextBlock x:Name="TxtStatBar" 
-                                           Text="SDX2 • 22 050 Hz • 3DO Linear • Studio AA (Clean) • Clean" 
-                                           FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" 
-                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                            </Grid>
+                                BorderThickness="1" CornerRadius="6" Padding="10,5" Margin="0,0,0,10">
+                            <TextBlock x:Name="TxtStatBar" 
+                                       Text="SDX2 • 22 050 Hz • 3DO Linear • Studio AA (Clean) • Clean" 
+                                       FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" 
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                         </Border>
 
                         <!-- DEDICATED EXPORT TOOLBAR ROW -->
-                        <Border Grid.Row="3" Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}" 
+                        <Border Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}" 
                                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" 
-                                BorderThickness="1" CornerRadius="8" Padding="14,10">
+                                BorderThickness="1" CornerRadius="8" Padding="12,8">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
@@ -296,8 +279,8 @@
 
                                 <!-- Export Format Chooser -->
                                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="Export Format:" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                    <ComboBox x:Name="ComboExportFormat" Width="150" VerticalAlignment="Center">
+                                    <TextBlock Text="Export Format:" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <ComboBox x:Name="ComboExportFormat" Width="140" Height="32" VerticalAlignment="Center">
                                         <ComboBoxItem Content="MP3 (320 kbps)" Tag="mp3" IsSelected="True"/>
                                         <ComboBoxItem Content="FLAC Lossless" Tag="flac"/>
                                         <ComboBoxItem Content="WAV 16-bit PCM" Tag="wav"/>
@@ -306,16 +289,16 @@
 
                                 <!-- Actions -->
                                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <ui:Button x:Name="BtnOpenFolder" Content="Open Folder" Click="BtnOpenFolder_Click" IsEnabled="False" Margin="0,0,8,0" Height="36" Padding="14,0"/>
-                                    <ui:Button x:Name="BtnSaveAs" Appearance="Primary" Content="Export Audio..." Click="BtnSaveAs_Click" IsEnabled="False" FontWeight="SemiBold" Height="36" Padding="18,0"/>
+                                    <ui:Button x:Name="BtnOpenFolder" Content="Open Folder" Click="BtnOpenFolder_Click" IsEnabled="False" Margin="0,0,8,0" Height="32" Padding="12,0" FontSize="12"/>
+                                    <ui:Button x:Name="BtnSaveAs" Appearance="Primary" Content="Export Audio..." Click="BtnSaveAs_Click" IsEnabled="False" FontWeight="SemiBold" Height="32" Padding="16,0" FontSize="12"/>
                                 </StackPanel>
                             </Grid>
                         </Border>
 
-                    </Grid>
+                    </StackPanel>
                 </ui:Card>
 
-            </Grid>
+            </StackPanel>
         </Grid>
     </Grid>
 </ui:FluentWindow>

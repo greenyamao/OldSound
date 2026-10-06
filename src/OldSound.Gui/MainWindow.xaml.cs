@@ -176,9 +176,16 @@ public partial class MainWindow : FluentWindow
             SliderNoise.Value = p.SpuNoiseLevel;
             TxtNoise.Text = (p.SpuNoiseLevel > 0.001f) ? $"{(int)(p.SpuNoiseLevel * 100)}%" : "Off";
 
-            if (TxtPresetDescription != null)
+            if (TxtPresetChip != null)
             {
-                TxtPresetDescription.Text = p.Description;
+                TxtPresetChip.Text = p.Name switch
+                {
+                    "four-sight-1995" => "3DO Opera 1995 (SDX2)",
+                    "ps1-spu-1994" => "PlayStation 1994 (SPU)",
+                    "cassette-type1" => "Cassette (Type I Tape)",
+                    _ => p.Name
+                };
+                TxtPresetChip.ToolTip = p.Description;
             }
 
             UpdateMetrics(p);
