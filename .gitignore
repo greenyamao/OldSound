@@ -2,6 +2,12 @@
 **/bin/
 **/obj/
 dist/
+build/
+publish/
+**/publish/
+*.exe
+*.dll
+*.pdb
 output_samples/
 ai/
 *.user
