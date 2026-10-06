@@ -1,29 +1,29 @@
 # OldSound
 
-Инструмент для эмуляции аутентичной цифровой компрессии и аппаратных трактов консолей середины 1990-х (3DO, PS1) и аналоговой магнитной ленты.
+Audio processing tool for reproducing authentic digital compression and hardware signal paths of mid-1990s consoles (3DO, PS1) and compact cassette tape.
 
-В отличие от стандартных биткрашеров, здесь моделируются реальные алгоритмы сжатия и фильтрации:
-- **3DO Opera (Four-Sight 1995)**: 8-битный дельта-кодек SDX2 (нелинейный квадратный корень со сглаживанием атак slew-rate limiting), студийный 129-точечный КИХ-фильтр Блэкмана-Харриса 10.5 кГц, микрокод `half_rate.dsp` (линейный апсэмплинг со спектральным imaging 11–22 кГц) и ЦАП Саллена-Кея 20.5 кГц.
-- **Sony PlayStation (1994 SPU)**: 4-битный ADPCM (VAG) с 5 авторегрессионными фильтрами предсказания, аппаратная 4-точечная интерполяция Гаусса и 3-полюсный аналоговый фильтр 12 кГц.
-- **Компакт-кассета (Type I)**: нелинейная сатурация ленты, wow & flutter, спад ВЧ и аналоговый шум.
+Unlike generic bitcrushers, OldSound models the exact historical compression and reconstruction algorithms:
+- **3DO Opera (Four-Sight 1995)**: 8-bit non-linear square-root delta codec (SDX2) with transient slew-rate limiting, 129-tap Blackman-Harris FIR anti-aliasing pre-filter at 10.5 kHz, `half_rate.dsp` microcode (linear upsampling generating mirror imaging in 11–22 kHz), and 20.5 kHz Sallen-Key reconstruction DAC filter.
+- **Sony PlayStation (1994 SPU)**: 4-bit ADPCM (VAG) with 5 autoregressive prediction filters, hardware 4-point Gaussian interpolation, and 3-pole analog reconstruction filter at 12 kHz.
+- **Compact Cassette (Type I)**: Non-linear magnetic tape saturation, wow & flutter, high-frequency roll-off, and analog hiss.
 
-## Сборка и запуск
+## Building and Running
 
-Для сборки из исходников требуется .NET 10 SDK. В GUI уже встроен упакованный FFmpeg, поэтому внешних кодеков и библиотек ставить не нужно.
+Requires .NET 10 SDK for building from source. The GUI embeds a compressed FFmpeg binary and has no external dependencies.
 
 ```bash
-# Запуск тестов
+# Run test suite
 dotnet test
 
-# Сборка автономного single-file exe
+# Publish self-contained single-file executable
 dotnet publish src/OldSound.Gui/OldSound.Gui.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o dist
 ```
 
-Готовый бинарник: `dist/OldSound.Gui.exe`.
+Standalone binary: `dist/OldSound.Gui.exe`.
 
-## Возможности
+## Features
 
-- Защита от перегруза: автоматический контроль пиков (-1.4 dBFS headroom) без клиппинга формы волны.
-- Мгновенное A/B сравнение («Оригинал» / «Обработано») на лету.
-- Режим Raw Aliasing: возможность вручную отключить префильтр для сравнения чистого 3DO-тракта с жестким лоуфай-скрежетом.
-- Поддержка форматов: WAV, MP3, FLAC, OGG, AIFF.
+- Headroom safety: Automatic peak limiting (-1.4 dBFS headroom) preventing digital clipping.
+- Instant A/B comparison: Seamless toggle between Original and Processed audio.
+- Raw Aliasing mode: Toggleable anti-aliasing filter to compare clean 3DO reproduction against raw decimation crunch.
+- Supported audio formats: WAV, MP3, FLAC, OGG, AIFF.

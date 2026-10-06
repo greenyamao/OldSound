@@ -3,7 +3,7 @@ using System;
 namespace OldSound.Core.Audio;
 
 /// <summary>
-/// Представляет многоканальный аудио-буфер с нормализованными float-сэмплами [-1.0f, +1.0f].
+/// Multi-channel audio buffer with normalized float samples [-1.0f, +1.0f].
 /// </summary>
 public sealed class AudioBuffer
 {
@@ -11,17 +11,17 @@ public sealed class AudioBuffer
     public int SampleRate { get; }
     public int LengthSamples { get; }
 
-    // Канал x сэмплы: [channel][sampleIndex]
+    // Channel x samples: [channel][sampleIndex]
     private readonly float[][] _channelData;
 
     public AudioBuffer(int channels, int sampleRate, int lengthSamples)
     {
         if (channels < 1 || channels > 8)
-            throw new ArgumentOutOfRangeException(nameof(channels), "Поддерживается от 1 до 8 каналов.");
+            throw new ArgumentOutOfRangeException(nameof(channels), "Supported channel count is 1 to 8.");
         if (sampleRate < 4000 || sampleRate > 192000)
-            throw new ArgumentOutOfRangeException(nameof(sampleRate), "Частота дискретизации вне допустимого диапазона.");
+            throw new ArgumentOutOfRangeException(nameof(sampleRate), "Sample rate is outside supported range.");
         if (lengthSamples < 0)
-            throw new ArgumentOutOfRangeException(nameof(lengthSamples), "Длина буфера не может быть отрицательной.");
+            throw new ArgumentOutOfRangeException(nameof(lengthSamples), "Buffer length cannot be negative.");
 
         Channels = channels;
         SampleRate = sampleRate;
@@ -48,7 +48,7 @@ public sealed class AudioBuffer
     }
 
     /// <summary>
-    /// Конвертирует канал в 16-битный PCM массив [-32768, 32767] с опциональным масштабированием (headroom gain).
+    /// Converts a channel to a 16-bit PCM array [-32768, 32767] with optional headroom gain scaling.
     /// </summary>
     public short[] ToPcm16(int channel, float gain = 1.0f)
     {
@@ -65,7 +65,7 @@ public sealed class AudioBuffer
     }
 
     /// <summary>
-    /// Заполняет канал из 16-битного PCM массива с опциональным обратным масштабированием.
+    /// Populates a channel from a 16-bit PCM array with optional inverse gain scaling.
     /// </summary>
     public void FromPcm16(int channel, ReadOnlySpan<short> pcm, float gain = 1.0f)
     {
@@ -79,7 +79,7 @@ public sealed class AudioBuffer
     }
 
     /// <summary>
-    /// Создает глубокую копию буфера.
+    /// Creates a deep copy of the buffer.
     /// </summary>
     public AudioBuffer Clone()
     {

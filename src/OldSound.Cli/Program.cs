@@ -47,14 +47,14 @@ public static class Program
             }
             else
             {
-                AnsiConsole.MarkupLine($"[red]Неизвестная команда или файл:[/red] '{args[0]}'");
+                AnsiConsole.MarkupLine($"[red]Unknown command or file:[/red] '{args[0]}'");
                 PrintHelp();
                 return 1;
             }
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"\n[bold red]Ошибка:[/bold red] {ex.Message}");
+            AnsiConsole.MarkupLine($"\n[bold red]Error:[/bold red] {ex.Message}");
             return 1;
         }
     }
@@ -64,42 +64,42 @@ public static class Program
         AnsiConsole.Write(
             new FigletText("OldSound")
                 .Color(Color.DeepSkyBlue1));
-        AnsiConsole.MarkupLine("[bold grey]Аутентичный DSP-эмулятор звуковых трактов консолей 90-х (PS1, 3DO) и кассеты[/]");
+        AnsiConsole.MarkupLine("[bold grey]Authentic DSP emulator of 90s console audio paths (PS1, 3DO) and cassette tape[/]");
         AnsiConsole.MarkupLine("[grey]Sony ADPCM • 3DO SDX2 Delta • 4-Point Gaussian DAC • half_rate.dsp • SPU Filters • Tape[/]\n");
     }
 
     private static void PrintHelp()
     {
         var panel = new Panel(new Markup(
-            "[bold yellow]Использование:[/]\n" +
-            "  [cyan]oldsound process[/] <input-file> -o <output-file> [параметры]\n" +
-            "  [cyan]oldsound batch[/] <input-dir> -o <output-dir> [параметры]\n" +
-            "  [cyan]oldsound[/] <input-file> [output-file] [--preset <имя>]\n" +
-            "  [cyan]oldsound presets[/] (список доступных профилей звучания)\n\n" +
-            "[bold yellow]Основные параметры:[/]\n" +
-            "  [green]--preset <имя>[/]       Профиль звучания (напр. [yellow]four-sight-1995[/], [yellow]ps1-spu-1994[/])\n" +
-            "  [green]-o, --output <путь>[/]   Путь к выходному файлу или папке\n" +
-            "  [green]--codec <тип>[/]         Кодек: [yellow]adpcm[/], [yellow]sdx2[/], [yellow]bypass[/]\n" +
-            "  [green]--interp <тип>[/]        Интерполяция ЦАП: [yellow]gauss[/], [yellow]linear3do[/], [yellow]linear[/]\n" +
-            "  [green]--rate <герцы>[/]        Частота консольного голоса (44100, 37800, 22050, 18900, 11025)\n" +
-            "  [green]--cutoff <герцы>[/]      Частота среза аналогового фильтра (напр. [yellow]10200[/] или [yellow]20500[/])\n" +
-            "  [green]--no-filter[/]           Отключить аналоговый фильтр выхода ЦАП\n" +
-            "  [green]--glue <число>[/]        Насыщение / аналоговый клей шины (0.0 .. 2.0)\n" +
-            "  [green]--spu-noise <число>[/]   Уровень фонового шума ЦАП (0.0 .. 2.0)\n" +
-            "  [green]--no-spu-noise[/]        Отключить фоновый шум ЦАП\n" +
-            "  [green]--tape[/]                Включить эмуляцию кассеты\n" +
-            "  [green]--no-tape[/]             Отключить эмуляцию кассеты\n" +
-            "  [green]--drive <число>[/]       Магнитное насыщение кассеты (напр. [yellow]1.4[/])\n" +
-            "  [green]--hiss <число>[/]        Уровень шума ленты (0.0 .. 1.0)\n" +
-            "  [green]--pattern <маска>[/]     Маска файлов для batch (напр. [yellow]*.mp3[/], по умолч. [yellow]*.*[/])\n\n" +
-            "[bold yellow]Примеры:[/]\n" +
+            "[bold yellow]Usage:[/]\n" +
+            "  [cyan]oldsound process[/] <input-file> -o <output-file> [options]\n" +
+            "  [cyan]oldsound batch[/] <input-dir> -o <output-dir> [options]\n" +
+            "  [cyan]oldsound[/] <input-file> [output-file] [--preset <name>]\n" +
+            "  [cyan]oldsound presets[/] (list available audio profiles)\n\n" +
+            "[bold yellow]Options:[/]\n" +
+            "  [green]--preset <name>[/]       Audio profile (e.g. [yellow]four-sight-1995[/], [yellow]ps1-spu-1994[/])\n" +
+            "  [green]-o, --output <path>[/]   Output file or directory path\n" +
+            "  [green]--codec <type>[/]         Codec: [yellow]adpcm[/], [yellow]sdx2[/], [yellow]bypass[/]\n" +
+            "  [green]--interp <type>[/]        DAC interpolation: [yellow]gauss[/], [yellow]linear3do[/], [yellow]linear[/]\n" +
+            "  [green]--rate <hz>[/]            Console voice sample rate (44100, 37800, 22050, 18900, 11025)\n" +
+            "  [green]--cutoff <hz>[/]          Analog filter cutoff frequency (e.g. [yellow]10200[/] or [yellow]20500[/])\n" +
+            "  [green]--no-filter[/]           Disable DAC analog output filter\n" +
+            "  [green]--glue <val>[/]           Bus glue / analog saturation (0.0 .. 2.0)\n" +
+            "  [green]--spu-noise <val>[/]      DAC noise floor level (0.0 .. 2.0)\n" +
+            "  [green]--no-spu-noise[/]        Disable DAC noise floor\n" +
+            "  [green]--tape[/]                Enable cassette tape simulation\n" +
+            "  [green]--no-tape[/]             Disable cassette tape simulation\n" +
+            "  [green]--drive <val>[/]          Cassette magnetic drive (e.g. [yellow]1.4[/])\n" +
+            "  [green]--hiss <val>[/]           Tape hiss level (0.0 .. 1.0)\n" +
+            "  [green]--pattern <mask>[/]      File search pattern for batch (e.g. [yellow]*.mp3[/], default [yellow]*.*[/])\n\n" +
+            "[bold yellow]Examples:[/]\n" +
             "  oldsound process track.wav -o track_3do.wav --preset four-sight-1995\n" +
             "  oldsound process music.flac -o music_ps1.mp3 --preset ps1-spu-1994\n" +
             "  oldsound process ambient.mp3 -o ambient_tape.mp3 --preset cassette-type1\n" +
             "  oldsound batch ./music -o ./music_retro --preset four-sight-1995"
         ))
         {
-            Header = new PanelHeader("[bold white]Справка по командам OldSound[/]"),
+            Header = new PanelHeader("[bold white]OldSound Command Help[/]"),
             Border = BoxBorder.Rounded
         };
         AnsiConsole.Write(panel);
@@ -108,11 +108,11 @@ public static class Program
     private static void PrintPresetsTable()
     {
         var table = new Table().Border(TableBorder.Rounded);
-        table.AddColumn("[bold cyan]Пресет[/]");
-        table.AddColumn("[bold yellow]Кодек[/]");
-        table.AddColumn("[bold green]Частота / ЦАП[/]");
-        table.AddColumn("[bold magenta]Фильтр выхода[/]");
-        table.AddColumn("[bold white]Описание исторического звучания[/]");
+        table.AddColumn("[bold cyan]Preset[/]");
+        table.AddColumn("[bold yellow]Codec[/]");
+        table.AddColumn("[bold green]Rate / DAC[/]");
+        table.AddColumn("[bold magenta]Output Filter[/]");
+        table.AddColumn("[bold white]Historical Sound Description[/]");
 
         foreach (var p in PresetRegistry.GetAll())
         {
@@ -132,13 +132,13 @@ public static class Program
             };
 
             string filterStr = p.EnableAnalogFilter
-                ? $"{p.FilterTopology} ({p.FilterCutoffHz:F0} Гц)"
-                : "[grey]Выкл[/]";
+                ? $"{p.FilterTopology} ({p.FilterCutoffHz:F0} Hz)"
+                : "[grey]Off[/]";
 
             table.AddRow(
                 $"[cyan]{p.Name}[/]",
                 codecStr,
-                $"{p.SpuVoiceRate} Гц ({interpStr})",
+                $"{p.SpuVoiceRate} Hz ({interpStr})",
                 filterStr,
                 p.Description
             );
@@ -220,14 +220,14 @@ public static class Program
 
         if (string.IsNullOrEmpty(inputPath))
         {
-            AnsiConsole.MarkupLine("[red]Не указан входной файл.[/]");
+            AnsiConsole.MarkupLine("[red]Input file not specified.[/]");
             PrintHelp();
             return 1;
         }
 
         if (!File.Exists(inputPath))
         {
-            AnsiConsole.MarkupLine($"[red]Файл не найден:[/] {inputPath}");
+            AnsiConsole.MarkupLine($"[red]File not found:[/] {inputPath}");
             return 1;
         }
 
@@ -253,30 +253,30 @@ public static class Program
 
         var sw = Stopwatch.StartNew();
 
-        AnsiConsole.MarkupLine($"[cyan]Входной файл:[/]  [white]{Path.GetFullPath(inputPath)}[/]");
-        AnsiConsole.MarkupLine($"[cyan]Выходной файл:[/] [white]{Path.GetFullPath(outputPath)}[/]");
-        AnsiConsole.MarkupLine($"[cyan]Профиль:[/]       [bold yellow]{preset.Name}[/] ({preset.Codec}, {preset.SpuVoiceRate} Гц, Filter: {(preset.EnableAnalogFilter ? $"{preset.FilterCutoffHz:F0} Гц" : "Выкл")}, Tape: {preset.EnableTape})");
+        AnsiConsole.MarkupLine($"[cyan]Input file:[/]  [white]{Path.GetFullPath(inputPath)}[/]");
+        AnsiConsole.MarkupLine($"[cyan]Output file:[/] [white]{Path.GetFullPath(outputPath)}[/]");
+        AnsiConsole.MarkupLine($"[cyan]Preset:[/]      [bold yellow]{preset.Name}[/] ({preset.Codec}, {preset.SpuVoiceRate} Hz, Filter: {(preset.EnableAnalogFilter ? $"{preset.FilterCutoffHz:F0} Hz" : "Off")}, Tape: {preset.EnableTape})");
 
         AudioBuffer inBuffer = null!;
         AudioBuffer outBuffer = null!;
 
         AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
-            .Start("Обработка аудио...", ctx =>
+            .Start("Processing audio...", ctx =>
             {
-                ctx.Status("Загрузка и декодирование аудиофайла...");
+                ctx.Status("Loading and decoding audio file...");
                 inBuffer = AudioBridge.Load(inputPath);
 
-                ctx.Status($"Применение аутентичного ретро-тракта ({preset.Codec} {preset.SpuVoiceRate} Гц, ЦАП {preset.Interpolation}, LPF {preset.FilterCutoffHz:F0} Гц)...");
+                ctx.Status($"Applying authentic retro signal path ({preset.Codec} {preset.SpuVoiceRate} Hz, DAC {preset.Interpolation}, LPF {preset.FilterCutoffHz:F0} Hz)...");
                 outBuffer = RetroAudioPipeline.Process(inBuffer, preset);
 
-                ctx.Status("Сохранение и кодирование выходного файла...");
+                ctx.Status("Encoding and saving output file...");
                 AudioBridge.Save(outBuffer, outputPath);
             });
 
         sw.Stop();
-        AnsiConsole.MarkupLine($"\n[bold green]✓ Готово![/] Обработано {inBuffer.LengthSamples} сэмплов ({inBuffer.Channels} канала) за [bold yellow]{sw.Elapsed.TotalSeconds:F2} сек[/].");
-        AnsiConsole.MarkupLine($"Файл сохранен: [bold underline white]{Path.GetFullPath(outputPath)}[/]\n");
+        AnsiConsole.MarkupLine($"\n[bold green]✓ Done![/] Processed {inBuffer.LengthSamples} samples ({inBuffer.Channels} channels) in [bold yellow]{sw.Elapsed.TotalSeconds:F2}s[/].");
+        AnsiConsole.MarkupLine($"File saved: [bold underline white]{Path.GetFullPath(outputPath)}[/]\n");
 
         return 0;
     }
@@ -303,7 +303,7 @@ public static class Program
 
         if (string.IsNullOrEmpty(inputDir) || !Directory.Exists(inputDir))
         {
-            AnsiConsole.MarkupLine("[red]Не указана или не существует входная папка.[/]");
+            AnsiConsole.MarkupLine("[red]Input directory not specified or does not exist.[/]");
             return 1;
         }
 
@@ -321,16 +321,16 @@ public static class Program
 
         if (files.Length == 0)
         {
-            AnsiConsole.MarkupLine($"[yellow]Не найдено поддерживаемых аудиофайлов по маске '{pattern}' в '{inputDir}'.[/]");
+            AnsiConsole.MarkupLine($"[yellow]No supported audio files matching '{pattern}' found in '{inputDir}'.[/]");
             return 0;
         }
 
         var preset = PresetRegistry.Get(presetName);
 
-        AnsiConsole.MarkupLine($"[bold cyan]Пакетная обработка:[/] {files.Length} файлов");
-        AnsiConsole.MarkupLine($"[cyan]Входная папка:[/]   {Path.GetFullPath(inputDir)}");
-        AnsiConsole.MarkupLine($"[cyan]Выходная папка:[/]  {Path.GetFullPath(outputDir)}");
-        AnsiConsole.MarkupLine($"[cyan]Профиль:[/]         [bold yellow]{preset.Name}[/]\n");
+        AnsiConsole.MarkupLine($"[bold cyan]Batch processing:[/] {files.Length} files");
+        AnsiConsole.MarkupLine($"[cyan]Input directory:[/]   {Path.GetFullPath(inputDir)}");
+        AnsiConsole.MarkupLine($"[cyan]Output directory:[/]  {Path.GetFullPath(outputDir)}");
+        AnsiConsole.MarkupLine($"[cyan]Preset:[/]            [bold yellow]{preset.Name}[/]\n");
 
         var sw = Stopwatch.StartNew();
 
@@ -345,7 +345,7 @@ public static class Program
             })
             .Start(ctx =>
             {
-                var task = ctx.AddTask("[green]Обработка файлов[/]", maxValue: files.Length);
+                var task = ctx.AddTask("[green]Processing files[/]", maxValue: files.Length);
 
                 foreach (var file in files)
                 {
@@ -362,7 +362,7 @@ public static class Program
             });
 
         sw.Stop();
-        AnsiConsole.MarkupLine($"\n[bold green]✓ Пакетная обработка успешно завершена![/] Обработано {files.Length} файлов за [bold yellow]{sw.Elapsed.TotalSeconds:F2} сек[/].\n");
+        AnsiConsole.MarkupLine($"\n[bold green]✓ Batch processing completed successfully![/] Processed {files.Length} files in [bold yellow]{sw.Elapsed.TotalSeconds:F2}s[/].\n");
         return 0;
     }
 }

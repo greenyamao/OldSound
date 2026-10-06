@@ -5,28 +5,28 @@ using OldSound.Core.Pipeline;
 namespace OldSound.Core.Dsp;
 
 /// <summary>
-/// Физическая модель аналогового шума тракта (Physical Analog Noise Engine).
-/// Моделирует реальные физические компоненты шума:
-/// 1. Console (PS1/3DO): тепловой шум ЦАП + срез фильтра 16.5 кГц + сетевой фон БП (50/100 Гц) + строчная развертка/DMA (15.6 кГц).
-/// 2. Cassette (Type I NAB 120µs): оксидное зерно ленты + шелковый резонанс головки (8.2 кГц) + завал зазора (14.2 кГц) + рокот мотора (50/68 Гц).
+/// Physical model of analog path noise.
+/// Simulates physical noise components:
+/// 1. Console (PS1/3DO): DAC thermal noise + 16.5 kHz reconstruction roll-off + power supply hum (50/100 Hz) + line scan/DMA whine (15.6 kHz).
+/// 2. Cassette (Type I NAB 120µs): Magnetic tape oxide grain + head inductance resonance (8.2 kHz) + gap loss (14.2 kHz) + motor rumble (50/68 Hz).
 /// </summary>
 public sealed class SpuNoiseFloor
 {
     private readonly Random _random;
 
-    // Генератор розового шума (Kellet pink filter)
+    // Pink noise generator (Kellet pink filter)
     private float _b0L, _b1L, _b2L;
     private float _b0R, _b1R, _b2R;
     private float _dcInL, _dcOutL;
     private float _dcInR, _dcOutR;
 
-    // Каскад Biquad-фильтров формирования спектра (2 фильтра на канал)
+    // Spectral shaping biquad filter cascade (2 filters per channel)
     private float _f1X1L, _f1X2L, _f1Y1L, _f1Y2L;
     private float _f1X1R, _f1X2R, _f1Y1R, _f1Y2R;
     private float _f2X1L, _f2X2L, _f2Y1L, _f2Y2L;
     private float _f2X1R, _f2X2R, _f2Y1R, _f2Y2R;
 
-    // Фазы синтезаторов фона питания и наводок
+    // Power supply hum and interference synthesizer phases
     private double _humPhase50;
     private double _humPhase100;
     private double _humPhase150;
@@ -60,7 +60,7 @@ public sealed class SpuNoiseFloor
     }
 
     /// <summary>
-    /// Накладывает физический аналоговый шум на стереосигнал.
+    /// Applies physical analog noise to a stereo signal.
     /// </summary>
     public void ProcessStereo(
         Span<float> left, 
@@ -77,24 +77,24 @@ public sealed class SpuNoiseFloor
 
         int length = Math.Min(left.Length, right.Length);
 
-        // Расчет параметров фильтров под профиль
+        // Filter parameters according to profile
         BiquadCoeffs f1, f2;
         if (profile == AnalogNoiseProfile.Console)
         {
-            // Фильтр 1: Срез выхода ЦАП SPU на 16.5 кГц
+            // Filter 1: SPU DAC output roll-off at 16.5 kHz
             f1 = BiquadCoeffs.LowPass(16500f, 0.707f, sampleRate);
-            // Фильтр 2: Мягкий саб-соник срез 40 Гц
+            // Filter 2: Gentle subsonic high-pass at 40 Hz
             f2 = BiquadCoeffs.HighPass(40f, 0.707f, sampleRate);
         }
         else
         {
-            // Фильтр 1: Завал зазора магнитной головки на 14.2 кГц
+            // Filter 1: Magnetic tape head gap loss at 14.2 kHz
             f1 = BiquadCoeffs.LowPass(14200f, 0.8f, sampleRate);
-            // Фильтр 2: Резонанс индуктивности головки NAB 120µs (+6.5 дБ на 8.2 кГц) — шелковый «ш-ш-ш»
+            // Filter 2: NAB 120µs head inductance bump (+6.5 dB at 8.2 kHz)
             f2 = BiquadCoeffs.PeakingEq(8200f, 1.3f, 6.5f, sampleRate);
         }
 
-        // Шаги приращения фазы
+        // Phase step increments
         double step50 = 2.0 * Math.PI * 50.0 / sampleRate;
         double step100 = 2.0 * Math.PI * 100.0 / sampleRate;
         double step150 = 2.0 * Math.PI * 150.0 / sampleRate;
@@ -104,7 +104,7 @@ public sealed class SpuNoiseFloor
 
         for (int i = 0; i < length; i++)
         {
-            // 1. Генерация сырого стерео розового шума
+            // 1. Generate raw stereo pink noise
             float wL = (float)(_random.NextDouble() * 2.0 - 1.0);
             float wR = (float)(_random.NextDouble() * 2.0 - 1.0);
 
@@ -125,34 +125,34 @@ public sealed class SpuNoiseFloor
             _dcOutR = rawPinkR - _dcInR + 0.995f * _dcOutR;
             _dcInR = rawPinkR;
 
-            // 2. Спектральная коррекция (Biquad cascade)
+            // 2. Spectral shaping (Biquad cascade)
             float shapedL = ApplyBiquad(_dcOutL, in f1, ref _f1X1L, ref _f1X2L, ref _f1Y1L, ref _f1Y2L);
             shapedL = ApplyBiquad(shapedL, in f2, ref _f2X1L, ref _f2X2L, ref _f2Y1L, ref _f2Y2L);
 
             float shapedR = ApplyBiquad(_dcOutR, in f1, ref _f1X1R, ref _f1X2R, ref _f1Y1R, ref _f1Y2R);
             shapedR = ApplyBiquad(shapedR, in f2, ref _f2X1R, ref _f2X2R, ref _f2Y1R, ref _f2Y2R);
 
-            // 3. Синтез монофонических наводок земли / мотора / развертки
+            // 3. Synthesize mono ground hum / motor / line scan artifacts
             float monoArtifact = 0f;
             if (profile == AnalogNoiseProfile.Console)
             {
-                // Сетевой фон БП (50 Гц + 100 Гц выпрямитель + 150 Гц третья гармоника)
+                // Power supply hum (50 Hz + 100 Hz rectifier + 150 Hz 3rd harmonic)
                 float hum50 = (float)Math.Sin(_humPhase50) * 0.0032f;
                 float hum100 = (float)Math.Sin(_humPhase100) * 0.0020f;
                 float hum150 = (float)Math.Sin(_humPhase150) * 0.0007f;
 
-                // Ультратонкий писк строчной развертки / DMA (15.625 кГц)
+                // CRT line scan / DMA clock whine (15.625 kHz)
                 float whine = (float)Math.Sin(_clockWhinePhase) * 0.00065f;
 
                 monoArtifact = (hum50 + hum100 + hum150 + whine) * humScale;
             }
             else
             {
-                // Фон сетевого трансформатора магнитофона + рокот подшипника тонвала (68 Гц)
+                // Transformer hum + capstan bearing rumble (68 Hz)
                 float hum50 = (float)Math.Sin(_humPhase50) * 0.0025f;
                 float rumble = (float)Math.Sin(_motorRumblePhase) * 0.0016f;
 
-                // Микро-флаттер ленты (дыхание уровня шума)
+                // Tape micro-flutter
                 float flutterMod = 1.0f + 0.04f * (float)Math.Sin(_tapeFlutterPhase);
                 shapedL *= flutterMod;
                 shapedR *= flutterMod;
@@ -160,7 +160,7 @@ public sealed class SpuNoiseFloor
                 monoArtifact = (hum50 + rumble) * humScale;
             }
 
-            // Инкремент фаз
+            // Phase increments
             _humPhase50 = (_humPhase50 + step50) % (Math.PI * 2.0);
             _humPhase100 = (_humPhase100 + step100) % (Math.PI * 2.0);
             _humPhase150 = (_humPhase150 + step150) % (Math.PI * 2.0);
@@ -168,14 +168,14 @@ public sealed class SpuNoiseFloor
             _motorRumblePhase = (_motorRumblePhase + stepRumble) % (Math.PI * 2.0);
             _tapeFlutterPhase = (_tapeFlutterPhase + stepFlutter) % (Math.PI * 2.0);
 
-            // 4. Смешивание: Моно-гул в центре + Стерео-зерно по панораме
+            // 4. Mixing: Mono hum in center + stereo hiss across panorama
             left[i] += shapedL * hissAmp + monoArtifact;
             right[i] += shapedR * hissAmp + monoArtifact;
         }
     }
 
     /// <summary>
-    /// Накладывает физический аналоговый шум на моно сигнал.
+    /// Applies physical analog noise to a mono signal.
     /// </summary>
     public void ProcessMono(
         Span<float> channel, 

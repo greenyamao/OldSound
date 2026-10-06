@@ -25,14 +25,14 @@ public class SonyAdpcmTests
     public void ProcessPcm_ConstantSignal_ConvergesAccurately()
     {
         var adpcm = new SonyAdpcm();
-        short[] original = new short[56]; // 2 блока по 28 сэмплов
+        short[] original = new short[56]; // 2 blocks of 28 samples each
         Array.Fill(original, (short)5000);
 
         short[] processed = adpcm.ProcessPcm(original);
 
         Assert.Equal(56, processed.Length);
 
-        // Во 2-м блоке (после установления истории) погрешность 4-битного ADPCM минимальна
+        // In the 2nd block (after history stabilization) 4-bit ADPCM error is minimal
         for (int i = 28; i < 56; i++)
         {
             Assert.InRange(processed[i], 4900, 5100);
@@ -53,7 +53,7 @@ public class SonyAdpcmTests
 
         Assert.Equal(sine.Length, processed.Length);
 
-        // Проверяем корреляцию (сигнал должен оставаться похожим на синус с шумом квантования)
+        // Verify correlation (signal should remain close to original sine wave plus quantization noise)
         double errorEnergy = 0;
         double signalEnergy = 0;
         for (int i = 0; i < sine.Length; i++)
@@ -64,8 +64,8 @@ public class SonyAdpcmTests
         }
 
         double snr = 10.0 * Math.Log10(signalEnergy / errorEnergy);
-        // Для 4-битного ADPCM нормальный SNR составляет 15..28 дБ
-        Assert.True(snr > 15.0, $"SNR слишком низкий: {snr:F2} dB");
+        // For 4-bit ADPCM, typical SNR is 15..28 dB
+        Assert.True(snr > 15.0, $"SNR is too low: {snr:F2} dB");
     }
 
     [Fact]

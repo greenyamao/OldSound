@@ -5,9 +5,9 @@ using OldSound.Core.Dsp;
 namespace OldSound.Core.Pipeline;
 
 /// <summary>
-/// Главный конвейер цифровой обработки сигналов (DSP Pipeline).
-/// Реализует аутентичный тракт консолей 5-го поколения (PS1 SPU, CD-XA, 3DO Opera SDX2)
-/// и аналоговой компакт-кассеты с гарантированным музыкальным гейн-стейджингом.
+/// Master DSP pipeline.
+/// Implements authentic signal paths of 5th-generation consoles (PS1 SPU, CD-XA, 3DO Opera SDX2)
+/// and compact cassette tape with guaranteed musical gain staging.
 /// </summary>
 public static class RetroAudioPipeline
 {
@@ -18,20 +18,20 @@ public static class RetroAudioPipeline
         int targetVoiceRate = preset.SpuVoiceRate;
         int outSampleRate = preset.OutputSampleRate > 0 ? preset.OutputSampleRate : inSampleRate;
 
-        // 1. Поканальная обработка: антиалиасинг, кодирование/декодирование, интерполяция ЦАП
+        // 1. Channel processing: anti-aliasing, encode/decode, DAC interpolation
         short[][] processedChannels = new short[channels][];
         int finalLength = 0;
-        const float HeadroomPreGain = 0.85f; // Запас -1.4 dBFS от переполнения ADPCM предиктора и фильтров
+        const float HeadroomPreGain = 0.85f; // -1.4 dBFS headroom preventing ADPCM predictor overflow and filter clipping
 
         for (int ch = 0; ch < channels; ch++)
         {
             short[] pcm16 = input.ToPcm16(ch, HeadroomPreGain);
             short[] voicePcm;
 
-            // Антиалиасинг и ресемплинг в частоту консольного голоса
+            // Anti-aliasing and resampling to console voice rate
             if (inSampleRate != targetVoiceRate)
             {
-                // Префильтрация: если PreFilterCutoffHz <= 0, фильтр отключается, сохраняя аутентичный кристаллический верх и алиасинг
+                // Pre-filtering: if PreFilterCutoffHz <= 0, filter is bypassed, producing raw decimation crunch
                 short[] filtered = (preset.PreFilterCutoffHz > 0f && preset.PreFilterCutoffHz < 20000f)
                     ? ApplyPreFilter(pcm16, inSampleRate, preset.PreFilterCutoffHz)
                     : pcm16;
@@ -42,7 +42,7 @@ public static class RetroAudioPipeline
                 voicePcm = pcm16;
             }
 
-            // Кодек
+            // Codec
             short[] decodedPcm;
             switch (preset.Codec)
             {
@@ -61,7 +61,7 @@ public static class RetroAudioPipeline
                     break;
             }
 
-            // Реконструкция и интерполяция ЦАП на выходную сетку частот (44.1 кГц)
+            // DAC reconstruction and interpolation to output sample rate (44.1 kHz)
             short[] reconstructedOutput;
             switch (preset.Interpolation)
             {
@@ -101,14 +101,14 @@ public static class RetroAudioPipeline
                 finalLength = Math.Min(finalLength, reconstructedOutput.Length);
         }
 
-        // Создаем выходной буфер с нормализованными float [-1.0 .. 1.0]
+        // Create output buffer with normalized float [-1.0 .. 1.0]
         var outBuffer = new AudioBuffer(channels, outSampleRate, finalLength);
         for (int ch = 0; ch < channels; ch++)
         {
             outBuffer.FromPcm16(ch, processedChannels[ch].AsSpan(0, finalLength), 1.0f / HeadroomPreGain);
         }
 
-        // 2. Аппаратный аналоговый выходной фильтр ЦАП (PS1 3-pole или 3DO 2-pole Sallen-Key)
+        // 2. Hardware analog output DAC filter (PS1 3-pole or 3DO 2-pole Sallen-Key)
         if (preset.EnableAnalogFilter && preset.FilterCutoffHz > 0)
         {
             var filter = new SpuAnalogFilter(preset.FilterCutoffHz, outSampleRate, preset.FilterTopology);
@@ -122,9 +122,9 @@ public static class RetroAudioPipeline
             }
         }
 
-        // 3. Высококачественный аналоговый шум выходного тракта (Master Analog Noise Floor)
-        // Добавляется в САМОМ КОНЦЕ тракта на полной сетке частот (44.1 кГц),
-        // формируя высококачественный стерео-фон («акустический клей») поверх жмыхнутого звука.
+        // 3. Master analog output noise floor
+        // Added at the very end of the pipeline at 44.1 kHz,
+        // providing a stereo analog floor across the soundscape.
         if (preset.SpuNoiseLevel > 0.0001f)
         {
             var noise = new SpuNoiseFloor();
@@ -138,18 +138,17 @@ public static class RetroAudioPipeline
             }
         }
 
-        // 4. Автоматическая калибровка безопасного запаса по уровню (-1.4 dBFS)
-        // Гарантирует абсолютное отсутствие клиппинга во всех форматах (WAV 16-bit / MP3 / WASAPI)
+        // 4. Automatic safety headroom calibration (-1.4 dBFS)
+        // Ensures zero digital clipping in all output formats (WAV 16-bit / MP3 / WASAPI)
         EnsureSafetyHeadroom(outBuffer, 0.85f);
 
         return outBuffer;
     }
 
     /// <summary>
-    /// Предварительный антиалиасинг КИХ-фильтр Блэкмана-Харриса (129 taps).
-    /// Гарантирует подавление спектральных компонент выше Найквиста целевой частоты
-    /// на >60..80 дБ, полностью устраняя паразитный foldover-алиасинг (эффект дешевого биткрашера)
-    /// и сохраняя естественную чистоту и музыкальность оригинального саундтрека Four-Sight.
+    /// Blackman-Harris FIR anti-aliasing pre-filter (129 taps).
+    /// Suppresses frequencies above Nyquist by >60..80 dB, eliminating foldover aliasing
+    /// while preserving the natural musicality of the source audio.
     /// </summary>
     private static short[] ApplyPreFilter(ReadOnlySpan<short> input, int sampleRate, float cutoffHz)
     {
@@ -157,11 +156,9 @@ public static class RetroAudioPipeline
     }
 
     /// <summary>
-    /// Автоматическое масштабирование запаса по уровню (Safety Headroom Auto-Gain).
-    /// Если пики сигнала (из-за резонанса аналоговых фильтров, интерполяции или квантования)
-    /// превышают безопасный порог (-1.4 dBFS / 0.85), весь трек пропорционально и линейно
-    /// масштабируется вниз ("звук становится тише"), гарантируя 0 сэмплов клиппинга
-    /// без срезания формы волны (flat-tops), перегруза ЦАП или MP3 intersample peaks.
+    /// Automatic safety headroom scaling.
+    /// If signal peaks exceed the safe threshold (-1.4 dBFS / 0.85),
+    /// scales the buffer proportionally down to prevent clipping and flat-tops.
     /// </summary>
     public static float EnsureSafetyHeadroom(AudioBuffer buffer, float targetCeiling = 0.85f)
     {
@@ -190,7 +187,7 @@ public static class RetroAudioPipeline
             return scale;
         }
 
-        // Страховочный зажим на случай погрешностей с плавающей точкой
+        // Safety clamp against floating-point inaccuracies
         for (int ch = 0; ch < buffer.Channels; ch++)
         {
             var span = buffer.GetChannelSpan(ch);

@@ -83,7 +83,7 @@
                         <!-- Aliasing -->
                         <Grid Margin="0,0,0,4">
                             <TextBlock Text="Raw Aliasing (Bitcrush):" VerticalAlignment="Center" FontWeight="SemiBold"
-                                       ToolTip="Включает жесткий паразитный алиасинг без фильтра (эффект дешевого биткрашера). Для аутентичного звука 3DO Four-Sight должен быть ВЫКЛЮЧЕН (работает студийный КИХ-антиалиасинг)."/>
+                                       ToolTip="Enables harsh raw aliasing without filtering (cheap bitcrusher effect). For authentic 3DO Four-Sight sound this should be OFF (studio FIR anti-aliasing active)."/>
                             <ui:ToggleSwitch x:Name="SwitchAliasing" HorizontalAlignment="Right" IsChecked="False" Click="SwitchAliasing_Click"/>
                         </Grid>
                     </StackPanel>

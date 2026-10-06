@@ -5,8 +5,8 @@ using System.Text;
 namespace OldSound.Core.Audio;
 
 /// <summary>
-/// Нативный высокопроизводительный кодек RIFF WAV.
-/// Поддерживает чтение 16/24/32-bit PCM и 32-bit IEEE float, а также запись 16/24-bit PCM.
+/// Native high-performance RIFF WAV codec.
+/// Supports reading 16/24/32-bit PCM and 32-bit IEEE float, and writing 16/24-bit PCM.
 /// </summary>
 public static class WavCodec
 {
@@ -21,12 +21,12 @@ public static class WavCodec
 
         uint riff = reader.ReadUInt32();
         if (riff != ChunkRiff)
-            throw new InvalidDataException("Файл не является валидным RIFF контейнером.");
+            throw new InvalidDataException("File is not a valid RIFF container.");
 
         uint fileSize = reader.ReadUInt32();
         uint wave = reader.ReadUInt32();
         if (wave != ChunkWave)
-            throw new InvalidDataException("Формат контейнера не WAVE.");
+            throw new InvalidDataException("Container format is not WAVE.");
 
         ushort audioFormat = 0;
         ushort channels = 0;
@@ -48,7 +48,7 @@ public static class WavCodec
                 ushort blockAlign = reader.ReadUInt16();
                 bitsPerSample = reader.ReadUInt16();
 
-                // Если есть расширенный заголовок (WAVEFORMATEXTENSIBLE)
+                // Check for extended header (WAVEFORMATEXTENSIBLE)
                 if (chunkSize > 16)
                 {
                     int extra = (int)(chunkSize - 16);
@@ -70,7 +70,7 @@ public static class WavCodec
             {
                 if (chunkSize == 0xFFFFFFFF || (int)chunkSize < 0)
                 {
-                    // Потоковый WAV (например, из pipe FFmpeg): читаем до конца потока
+                    // Streamed WAV (e.g., from FFmpeg pipe): read to end of stream
                     using var tempMs = new MemoryStream();
                     stream.CopyTo(tempMs);
                     rawAudioData = tempMs.ToArray();
@@ -79,20 +79,20 @@ public static class WavCodec
                 {
                     rawAudioData = reader.ReadBytes((int)chunkSize);
                 }
-                // Чанк data найден — выходим из цикла поиска
+                // Data chunk found — stop search
                 break;
             }
             else
             {
-                // Пропускаем метаданные и вспомогательные чанки (JUNK, LIST, bext и т.д.)
+                // Skip metadata and auxiliary chunks (JUNK, LIST, bext, etc.)
                 stream.Seek(chunkSize, SeekOrigin.Current);
             }
         }
 
         if (rawAudioData == null)
-            throw new InvalidDataException("В WAV файле отсутствует чанк данных 'data'.");
+            throw new InvalidDataException("Missing 'data' chunk in WAV file.");
         if (channels == 0 || sampleRate == 0)
-            throw new InvalidDataException("Некорректный заголовок формата WAV.");
+            throw new InvalidDataException("Corrupted WAV format header.");
 
         int bytesPerSample = bitsPerSample / 8;
         int frameSize = channels * bytesPerSample;
@@ -100,7 +100,7 @@ public static class WavCodec
 
         var buffer = new AudioBuffer(channels, (int)sampleRate, sampleCount);
 
-        // Парсинг сэмплов в зависимости от битности и формата
+        // Parse samples according to bit depth and format
         ReadOnlySpan<byte> span = rawAudioData;
 
         for (int ch = 0; ch < channels; ch++)
@@ -145,7 +145,7 @@ public static class WavCodec
             }
             else
             {
-                throw new NotSupportedException($"Битность {bitsPerSample}-bit с форматом {audioFormat} не поддерживается нативно.");
+                throw new NotSupportedException($"Bit depth {bitsPerSample}-bit with format {audioFormat} is not natively supported.");
             }
         }
 
@@ -155,7 +155,7 @@ public static class WavCodec
     public static void Write(AudioBuffer buffer, Stream stream, int bitsPerSample = 16)
     {
         if (bitsPerSample != 16 && bitsPerSample != 24)
-            throw new ArgumentException("Поддерживается запись в 16-bit или 24-bit PCM.", nameof(bitsPerSample));
+            throw new ArgumentException("Only 16-bit or 24-bit PCM writing is supported.", nameof(bitsPerSample));
 
         using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
 
@@ -183,7 +183,7 @@ public static class WavCodec
         writer.Write(ChunkData);
         writer.Write((uint)dataSize);
 
-        // Запись интерливированных сэмплов
+        // Write interleaved samples
         if (bitsPerSample == 16)
         {
             var channels = new float[buffer.Channels][];

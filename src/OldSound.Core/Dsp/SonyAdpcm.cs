@@ -3,16 +3,16 @@ using System;
 namespace OldSound.Core.Dsp;
 
 /// <summary>
-/// Аппаратно точная эмуляция алгоритма Sony ADPCM (VAG format) для звукового чипа PS1 SPU.
-/// Содержит точные формулы декодирования, 5 пар аппаратных коэффициентов предсказания
-/// и настраиваемый энкодер с поддержкой исторической деградации (Authentic VAG Grit).
+/// Hardware-accurate emulation of Sony ADPCM (VAG format) for the PS1 SPU sound processor.
+/// Implements decoding math, 5 hardware prediction filter pairs,
+/// and encoder options for authentic console quantization behavior.
 /// </summary>
 public sealed class SonyAdpcm
 {
     public const int SamplesPerBlock = 28;
     public const int BytesPerBlock = 16;
 
-    // Оригинальные аппаратные коэффициенты предсказания SPU (fixed-point Q6, деление на 64)
+    // Original SPU hardware prediction coefficients (fixed-point Q6, division by 64)
     public static readonly (int f0, int f1)[] Predictors = new[]
     {
         (0, 0),        // Filter 0
@@ -37,14 +37,14 @@ public sealed class SonyAdpcm
     }
 
     /// <summary>
-    /// Декодирует один 16-байтный блок VAG в 28 16-битных PCM сэмплов по оригинальной аппаратной формуле SPU.
+    /// Decodes a 16-byte VAG block into 28 16-bit PCM samples using original SPU formula.
     /// </summary>
     public void DecodeBlock(ReadOnlySpan<byte> block, Span<short> output28)
     {
         if (block.Length < BytesPerBlock)
-            throw new ArgumentException("Размер блока VAG должен быть 16 байт.", nameof(block));
+            throw new ArgumentException("VAG block size must be 16 bytes.", nameof(block));
         if (output28.Length < SamplesPerBlock)
-            throw new ArgumentException("Выходной буфер должен содержать минимум 28 сэмплов.", nameof(output28));
+            throw new ArgumentException("Output buffer must have at least 28 samples.", nameof(output28));
 
         int shift = 12 - (block[0] & 0x0F);
         int filter = (block[0] >> 4) & 0x07;
@@ -58,9 +58,9 @@ public sealed class SonyAdpcm
         {
             byte b = block[byteIdx];
 
-            // Младший ниббл (более ранний во времени сэмпл)
+            // Lower nibble (earlier sample in time)
             int nibble1 = b & 0x0F;
-            if (nibble1 >= 8) nibble1 -= 16; // знаковое расширение 4-bit -> int (-8..+7)
+            if (nibble1 >= 8) nibble1 -= 16; // sign extension 4-bit -> int (-8..+7)
 
             int s1 = (nibble1 << shift) + ((_hist1 * f0 + _hist2 * f1 + 32) / 64);
             s1 = Math.Clamp(s1, short.MinValue, short.MaxValue);
@@ -68,7 +68,7 @@ public sealed class SonyAdpcm
             _hist1 = s1;
             output28[sampleIdx++] = (short)s1;
 
-            // Старший ниббл (более поздний во времени сэмпл)
+            // Upper nibble (later sample in time)
             int nibble2 = (b >> 4) & 0x0F;
             if (nibble2 >= 8) nibble2 -= 16;
 
@@ -81,19 +81,19 @@ public sealed class SonyAdpcm
     }
 
     /// <summary>
-    /// Кодирует 28 сэмплов PCM в один 16-байтный блок VAG.
+    /// Encodes 28 PCM samples into a 16-byte VAG block.
     /// </summary>
-    /// <param name="input28">28 сэмплов PCM 16-bit</param>
-    /// <param name="outputBlock">16-байтный буфер для блока VAG</param>
-    /// <param name="flags">Флаги VAG (0 = обычный блок, 1 = конец, 2 = зациклен)</param>
-    /// <param name="grit">Уровень зернистости квантования (0.0 = чистый Hi-Fi подбор, >0.0 = аутентичный «хруст»)</param>
-    /// <param name="authenticMode">Использовать исторический целочисленный алгоритм Sony SDK (encvag/MFAudio)</param>
+    /// <param name="input28">28 samples of 16-bit PCM</param>
+    /// <param name="outputBlock">16-byte buffer for VAG block</param>
+    /// <param name="flags">VAG block flags (0 = normal, 1 = end, 2 = loop)</param>
+    /// <param name="grit">Quantization grit level (0.0 = clean, >0.0 = authentic grit)</param>
+    /// <param name="authenticMode">Use historical Sony SDK (encvag/MFAudio) integer truncation</param>
     public void EncodeBlock(ReadOnlySpan<short> input28, Span<byte> outputBlock, byte flags = 0, float grit = 0.0f, bool authenticMode = false)
     {
         if (input28.Length < SamplesPerBlock)
-            throw new ArgumentException("Входной блок должен содержать минимум 28 сэмплов.", nameof(input28));
+            throw new ArgumentException("Input block must contain at least 28 samples.", nameof(input28));
         if (outputBlock.Length < BytesPerBlock)
-            throw new ArgumentException("Размер выходного блока должен быть минимум 16 байт.", nameof(outputBlock));
+            throw new ArgumentException("Output block buffer must be at least 16 bytes.", nameof(outputBlock));
 
         int bestFilter = 0;
         int bestShift = 0;
@@ -104,7 +104,7 @@ public sealed class SonyAdpcm
 
         Span<int> tempNibbles = stackalloc int[SamplesPerBlock];
 
-        // В историческом режиме Sony SDK encvag использовались первые 3-4 фильтра
+        // In historical Sony SDK encvag mode, first 3-4 filters were typically evaluated
         int maxFilters = authenticMode ? 4 : 5;
 
         for (int f = 0; f < maxFilters; f++)
@@ -152,7 +152,7 @@ public sealed class SonyAdpcm
                     {
                         if (authenticMode)
                         {
-                            // Историческое целочисленное усечение Sony
+                            // Historical Sony integer truncation
                             rawNibble = diff >> decodeShift;
                         }
                         else
@@ -206,7 +206,7 @@ public sealed class SonyAdpcm
     }
 
     /// <summary>
-    /// Прогоняет поток 16-битных PCM сэмплов через цикл аппаратной компрессии Sony ADPCM и декодирования.
+    /// Processes a stream of 16-bit PCM samples through Sony ADPCM compression and decoding.
     /// </summary>
     public short[] ProcessPcm(ReadOnlySpan<short> inputPcm, float grit = 0.0f, bool authenticMode = false)
     {

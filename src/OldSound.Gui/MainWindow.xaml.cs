@@ -107,7 +107,7 @@ public partial class MainWindow : FluentWindow
     {
         "four-sight-1995" => "★ Four-Sight (1995 3DO SDX2)",
         "ps1-spu-1994" => "PlayStation (1994 SPU VAG)",
-        "cassette-type1" => "Компакт-кассета (Type I Tape)",
+        "cassette-type1" => "Compact Cassette (Type I Tape)",
         _ => name
     };
 
@@ -447,7 +447,7 @@ public partial class MainWindow : FluentWindow
 
             if (RbSourceProcessed.IsChecked != true)
             {
-                RbSourceProcessed.IsChecked = true; // Триггерит AudioSource_Changed -> SwitchSource()
+                RbSourceProcessed.IsChecked = true; // Triggers AudioSource_Changed -> SwitchSource()
             }
             else
             {
@@ -491,7 +491,7 @@ public partial class MainWindow : FluentWindow
         _pendingSeekPosition = currentPos;
         _wasPlayingBeforeSwitch = wasPlaying;
 
-        // Надежное закрытие старого медиа-графа перед загрузкой нового рендера
+        // Safely close previous media graph before loading new render
         _player.Stop();
         _player.Close();
 

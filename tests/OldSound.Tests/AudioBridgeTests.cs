@@ -13,7 +13,7 @@ public class AudioBridgeTests
         string mp3Path = Path.Combine("..", "..", "..", "..", "o.mp3");
         if (!File.Exists(mp3Path))
         {
-            // Также проверяем альтернативный относительный путь
+            // Also check alternate relative path
             mp3Path = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "..", "..", "o.mp3"));
         }
 
@@ -24,7 +24,7 @@ public class AudioBridgeTests
             Assert.True(buffer.SampleRate > 0);
             Assert.True(buffer.LengthSamples > 0);
 
-            // Тестовый прогон 1 секунды через пресет psx-xa-37k
+            // Test run across four-sight-1995 preset
             int testSamples = System.Math.Min(buffer.SampleRate * 2, buffer.LengthSamples);
             var slice = new AudioBuffer(buffer.Channels, buffer.SampleRate, testSamples);
             for (int c = 0; c < buffer.Channels; c++)

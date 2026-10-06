@@ -3,22 +3,21 @@ using System;
 namespace OldSound.Core.Dsp;
 
 /// <summary>
-/// Топология аппаратного фильтра выходного каскада консоли.
+/// Console output stage analog reconstruction filter topology.
 /// </summary>
 public enum FilterTopology
 {
-    /// <summary>3-полюсный активный фильтр PS1 SPU (-18 дБ/окт, RC + Sallen-Key Butterworth).</summary>
+    /// <summary>3-pole active filter of PS1 SPU (-18 dB/oct, RC + Sallen-Key Butterworth).</summary>
     ThreePoleSpu,
 
-    /// <summary>2-полюсный фильтр Саллена-Кея / Баттерворт (-12 дБ/окт, стандарт ЦАП 3DO Burr-Brown).</summary>
+    /// <summary>2-pole Sallen-Key Butterworth filter (-12 dB/oct, 3DO Burr-Brown DAC standard).</summary>
     TwoPoleSallenKey
 }
 
 /// <summary>
-/// Аппаратный аналоговый выходной фильтр ЦАП (Reconstruction & Anti-Aliasing Filter).
-/// На материнской плате PlayStation 1 после ЦАП CXD2922Q установлен 3-полюсный активный
-/// аналоговый Low-Pass фильтр (спад -18 дБ/октаву с частотой среза около 10–12 кГц).
-/// В 3DO применен 2-полюсный фильтр Саллена-Кея со срезом около 20.5 кГц.
+/// Hardware analog DAC reconstruction and anti-aliasing filter.
+/// PlayStation 1 features a 3-pole active low-pass filter (-18 dB/oct with ~10-12 kHz cutoff) after CXD2922Q.
+/// 3DO utilizes a 2-pole Sallen-Key low-pass filter with ~20.5 kHz cutoff.
 /// </summary>
 public sealed class SpuAnalogFilter
 {
@@ -26,12 +25,12 @@ public sealed class SpuAnalogFilter
     private int _sampleRate;
     private FilterTopology _topology;
 
-    // 1-й порядок (RC полюс): y[n] = b0*x[n] + b1*x[n-1] - a1*y[n-1]
+    // 1st order (RC pole): y[n] = b0*x[n] + b1*x[n-1] - a1*y[n-1]
     private float _rcB0, _rcB1, _rcA1;
     private float _rcX1L, _rcY1L;
     private float _rcX1R, _rcY1R;
 
-    // 2-й порядок (Sallen-Key биквадрат):
+    // 2nd order (Sallen-Key biquad):
     private float _bqB0, _bqB1, _bqB2, _bqA1, _bqA2;
     private float _bqX1L, _bqX2L, _bqY1L, _bqY2L;
     private float _bqX1R, _bqX2R, _bqY1R, _bqY2R;
@@ -58,20 +57,20 @@ public sealed class SpuAnalogFilter
         _sampleRate = sampleRate;
         _topology = topology;
 
-        // Билинейное преобразование с pre-warping
+        // Bilinear transform with pre-warping
         float w0 = 2f * MathF.PI * _cutoffHz;
         float k = 2f * sampleRate;
         float omega = 2f * sampleRate * MathF.Tan(w0 / (2f * sampleRate));
 
-        // 1-й порядок: H(s) = omega / (s + omega)
+        // 1st order: H(s) = omega / (s + omega)
         float rcA0 = k + omega;
         _rcB0 = omega / rcA0;
         _rcB1 = omega / rcA0;
         _rcA1 = (omega - k) / rcA0;
 
-        // 2-й порядок:
-        // Для PS1 SPU: Q = 1.0 (слегка подчеркнутый срез)
-        // Для 3DO Sallen-Key: Q = 0.7071 (максимально плоский Баттерворт)
+        // 2nd order:
+        // For PS1 SPU: Q = 1.0 (slightly resonant knee)
+        // For 3DO Sallen-Key: Q = 0.7071 (maximally flat Butterworth)
         float q = (_topology == FilterTopology.TwoPoleSallenKey) ? 0.70710678f : 1.0f;
         float omega2 = omega * omega;
         float bqA0 = (k * k) + (k * omega / q) + omega2;
@@ -83,7 +82,7 @@ public sealed class SpuAnalogFilter
     }
 
     /// <summary>
-    /// Фильтрация стерео канала (in-place).
+    /// Processes stereo channels (in-place).
     /// </summary>
     public void ProcessStereo(Span<float> left, Span<float> right)
     {
@@ -96,7 +95,7 @@ public sealed class SpuAnalogFilter
     }
 
     /// <summary>
-    /// Фильтрация моно канала (in-place).
+    /// Processes mono channel (in-place).
     /// </summary>
     public void ProcessMono(Span<float> channel)
     {
@@ -110,7 +109,7 @@ public sealed class SpuAnalogFilter
     {
         float stageInput = input;
 
-        // Если включен 3-полюсный фильтр PS1 SPU, применяем предварительный RC полюс
+        // If 3-pole PS1 SPU filter is active, apply preliminary RC pole
         if (_topology == FilterTopology.ThreePoleSpu)
         {
             float y1 = _rcB0 * input + _rcB1 * _rcX1L - _rcA1 * _rcY1L;
@@ -119,7 +118,7 @@ public sealed class SpuAnalogFilter
             stageInput = y1;
         }
 
-        // 2-й порядок Sallen-Key биквадрат
+        // 2nd order Sallen-Key biquad
         float y2 = _bqB0 * stageInput + _bqB1 * _bqX1L + _bqB2 * _bqX2L - _bqA1 * _bqY1L - _bqA2 * _bqY2L;
         _bqX2L = _bqX1L; _bqX1L = stageInput;
         _bqY2L = _bqY1L; _bqY1L = y2;

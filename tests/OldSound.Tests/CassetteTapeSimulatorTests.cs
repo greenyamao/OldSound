@@ -24,10 +24,10 @@ public class CassetteTapeSimulatorTests
 
         tape.Process(left, right, 44100);
 
-        // Большие сигналы должны мягко насыщаться в пределах ~1.0
+        // Large signals should softly saturate within ~1.0
         for (int i = 0; i < left.Length; i++)
         {
-            Assert.True(MathF.Abs(left[i]) <= 1.25f, $"Сигнал вышел за пределы сатурации: {left[i]}");
+            Assert.True(MathF.Abs(left[i]) <= 1.25f, $"Signal exceeded saturation ceiling: {left[i]}");
         }
     }
 
@@ -49,13 +49,13 @@ public class CassetteTapeSimulatorTests
 
         tape.Process(left, right, 44100);
 
-        // На тишине должен появиться шум ленты
+        // Silence should exhibit tape hiss
         float energy = 0;
         foreach (var s in left)
         {
             energy += s * s;
         }
 
-        Assert.True(energy > 0.000001f, "Шум ленты не обнаружен.");
+        Assert.True(energy > 0.000001f, "Tape hiss was not detected.");
     }
 }

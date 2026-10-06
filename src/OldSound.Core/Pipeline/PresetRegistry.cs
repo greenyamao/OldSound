@@ -5,8 +5,8 @@ using OldSound.Core.Dsp;
 namespace OldSound.Core.Pipeline;
 
 /// <summary>
-/// Реестр пресетов звукового тракта Four-Sight (1995 3DO / 1996 PS1).
-/// Фокусируется строго на аутентичной цифровой компрессии без сатураторов и дисторшена.
+/// Audio pipeline presets registry for Four-Sight (1995 3DO / 1996 PS1) and analog cassette tape.
+/// Focuses on authentic digital compression without synthetic distortion or clipping.
 /// </summary>
 public static class PresetRegistry
 {
@@ -17,7 +17,7 @@ public static class PresetRegistry
         ["four-sight-1995"] = new AudioPreset
         {
             Name = "four-sight-1995",
-            Description = "Four-Sight (1995) — Аутентичный звуковой тракт 3DO Opera: 22.05 кГц 8-битный SDX2 (Square-Root Delta), студийный КИХ-антиалиасинг 10.5 кГц, микрокод half_rate.dsp с кристаллическими зеркальными гармониками 11-22 кГц, ЦАП Sallen-Key 20.5 кГц, чистый цифровой тракт (без биткрашер-грязи).",
+            Description = "Four-Sight (1995) — Authentic 3DO Opera signal path: 22.05 kHz 8-bit SDX2 (Square-Root Delta), studio FIR anti-aliasing at 10.5 kHz, half_rate.dsp microcode with crystalline 11-22 kHz mirror harmonics, Sallen-Key 20.5 kHz DAC filter, clean digital path.",
             Codec = AudioCodecType.Sdx2_3Do,
             SpuVoiceRate = 22050,
             Interpolation = InterpolationType.Linear3DoHalfRate,
@@ -34,7 +34,7 @@ public static class PresetRegistry
         ["ps1-spu-1994"] = new AudioPreset
         {
             Name = "ps1-spu-1994",
-            Description = "PlayStation (1994 SPU VAG) — 22.05 кГц 4-битный ADPCM, студийный КИХ-антиалиасинг 10 кГц, 4-точечная гауссова интерполяция ЦАП, 3-полюсный аналоговый фильтр 12 кГц.",
+            Description = "PlayStation (1994 SPU VAG) — 22.05 kHz 4-bit ADPCM, studio FIR anti-aliasing at 10 kHz, 4-point Gaussian DAC interpolation, 3-pole analog reconstruction filter at 12 kHz.",
             Codec = AudioCodecType.SonyAdpcm,
             SpuVoiceRate = 22050,
             Interpolation = InterpolationType.Gaussian4Point,
@@ -52,7 +52,7 @@ public static class PresetRegistry
         ["cassette-type1"] = new AudioPreset
         {
             Name = "cassette-type1",
-            Description = "Компакт-кассета (Type I Tape) — Аналоговая магнитная лента (NAB 120µs EQ, сатурация ленты, wow & flutter, шелковистый шум).",
+            Description = "Compact Cassette (Type I Tape) — Analog magnetic tape (NAB 120µs EQ, tape saturation, wow & flutter, analog hiss).",
             Codec = AudioCodecType.Bypass,
             SpuVoiceRate = 44100,
             Interpolation = InterpolationType.Bypass,
@@ -77,7 +77,7 @@ public static class PresetRegistry
         }
     };
 
-    // Алиасы для обратной совместимости с тестами и CLI
+    // Aliases for backwards compatibility with tests and CLI
     private static readonly Dictionary<string, string> _aliases = new(StringComparer.OrdinalIgnoreCase)
     {
         ["four-sight-3do"] = "four-sight-1995",
@@ -101,7 +101,7 @@ public static class PresetRegistry
             return Clone(canonicalPreset);
         }
 
-        throw new ArgumentException($"Пресет с именем '{name}' не найден. Доступные пресеты: {string.Join(", ", _presets.Keys)}");
+        throw new ArgumentException($"Preset '{name}' not found. Available presets: {string.Join(", ", _presets.Keys)}");
     }
 
     public static IEnumerable<AudioPreset> GetAll() => _presets.Values;

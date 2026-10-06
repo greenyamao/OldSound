@@ -3,22 +3,21 @@ using System;
 namespace OldSound.Core.Dsp;
 
 /// <summary>
-/// Студийный линейно-фазовый КИХ-фильтр (FIR) антиалиасинга на базе окна Блэкмана-Харриса (N=129).
-/// Соответствует историческому премастерингу саундтрека Four-Sight (1995, 3DO / PlayStation),
-/// предотвращая эффект наложения спектров (foldover aliasing / биткрашер) при передискретизации
-/// в 22 050 Гц с подавлением зеркальных частот в полосе задерживания >80 дБ.
+/// Linear-phase Blackman-Harris FIR anti-aliasing filter (N=129).
+/// Matches the studio mastering chain used for Four-Sight (1995, 3DO / PlayStation),
+/// eliminating foldover aliasing when downsampling to 22,050 Hz with >80 dB stopband attenuation.
 /// </summary>
 public static class AntiAliasingFilter
 {
     public const int DefaultTaps = 129;
 
     /// <summary>
-    /// Расчет коэффициентов линейно-фазового КИХ-фильтра низких частот с окном Блэкмана-Харриса.
-    /// Идентичен scipy.signal.firwin(numTaps, cutoff / (0.5 * fs), window='blackmanharris').
+    /// Calculates coefficients for a linear-phase low-pass FIR filter with Blackman-Harris window.
+    /// Equivalent to scipy.signal.firwin(numTaps, cutoff / (0.5 * fs), window='blackmanharris').
     /// </summary>
     public static float[] DesignBlackmanHarrisFir(int sampleRate, float cutoffHz, int numTaps = DefaultTaps)
     {
-        if (numTaps % 2 == 0) numTaps++; // Нечетный порядок для симметричного фильтра типа I
+        if (numTaps % 2 == 0) numTaps++; // Odd order for symmetric Type I filter
         float[] h = new float[numTaps];
         int m = numTaps - 1;
         float center = m / 2.0f;
@@ -58,7 +57,7 @@ public static class AntiAliasingFilter
     }
 
     /// <summary>
-    /// Применение антиалиасинг фильтра с нулевой фазовой задержкой (компенсация групповой задержки).
+    /// Applies anti-aliasing filter with zero phase distortion (group delay compensated).
     /// </summary>
     public static short[] Apply(ReadOnlySpan<short> input, int sampleRate, float cutoffHz)
     {
@@ -71,12 +70,12 @@ public static class AntiAliasingFilter
 
         var output = new short[len];
 
-        // Оптимизированная свертка с краевой обработкой
+        // Optimized convolution with boundary clamping
         for (int i = 0; i < len; i++)
         {
             float acc = 0f;
 
-            // Внутренняя зона без выхода за границы
+            // Interior zone without boundary checks
             int offset = i - halfTaps;
             if (offset >= 0 && offset + numTaps <= len)
             {

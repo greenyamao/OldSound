@@ -3,15 +3,15 @@ using System;
 namespace OldSound.Core.Dsp;
 
 /// <summary>
-/// Аппаратно точная эмуляция 4-точечной гауссовой интерполяции чипа SPU (PlayStation 1 DAC).
-/// Включает оригинальную 512-элементную таблицу коэффициентов nocash psxspx
-/// и обеспечивает исторически достоверный спад высоких частот (натуральный Low-Pass фильтр).
+/// Hardware-accurate emulation of PlayStation 1 SPU 4-point Gaussian interpolation.
+/// Includes the original 512-entry coefficient table from nocash psxspx
+/// and reproduces the characteristic high-frequency roll-off (natural analog-like low-pass response).
 /// </summary>
 public static class SpuGaussianInterpolator
 {
     /// <summary>
-    /// Оригинальная 512-значная аппаратная таблица коэффициентов Гаусса SPU.
-    /// Сумма четверок коэффициентов для любого i: 0x7F7F..0x7F81 (32639..32641).
+    /// Original 512-entry SPU hardware Gaussian coefficient table.
+    /// Sum of four coefficients for any phase index i: 0x7F7F..0x7F81 (32639..32641).
     /// </summary>
     public static readonly short[] Table = new short[512]
     {
@@ -50,13 +50,13 @@ public static class SpuGaussianInterpolator
     };
 
     /// <summary>
-    /// Выполняет оригинальную аппаратную 4-точечную гауссову интерполяцию для одного отсчета.
+    /// Performs hardware 4-point Gaussian interpolation for a single output sample.
     /// </summary>
-    /// <param name="oldest">Самый старый сэмпл s[n-1]</param>
-    /// <param name="older">Предыдущий сэмпл s[n]</param>
-    /// <param name="old">Текущий сэмпл s[n+1]</param>
-    /// <param name="new">Новый сэмпл s[n+2]</param>
-    /// <param name="phase8">8-битная дробная фаза сэмпла (0..255)</param>
+    /// <param name="oldest">Sample s[n-1]</param>
+    /// <param name="older">Sample s[n]</param>
+    /// <param name="old">Sample s[n+1]</param>
+    /// <param name="new">Sample s[n+2]</param>
+    /// <param name="phase8">8-bit fractional sample phase (0..255)</param>
     public static short Interpolate(short oldest, short older, short old, short @new, int phase8)
     {
         int i = phase8 & 0xFF;
@@ -69,16 +69,15 @@ public static class SpuGaussianInterpolator
     }
 
     /// <summary>
-    /// Применяет аппаратную гауссову фильтрацию ЦАП с опциональным ресемплингом.
-    /// Входной поток (например, 44.1k/48k) переводится в частоту голоса SPU (targetVoiceRate),
-    /// а затем воспроизводится через гауссов интерполятор на выходной частоте (outputRate, по умолчанию 44100).
+    /// Applies SPU DAC Gaussian filtering with optional resampling.
+    /// Resamples the input stream to SPU voice rate, then plays back through the Gaussian kernel at outputRate.
     /// </summary>
     public static short[] Process(ReadOnlySpan<short> inputPcm, int inSampleRate, int targetVoiceRate, int outputRate = 44100)
     {
         if (inputPcm.Length == 0)
             return Array.Empty<short>();
 
-        // Шаг 1: Если исходный сэмплрейт отличается от частоты голоса SPU, ресемплим в voice rate
+        // Step 1: Resample to target voice rate if needed
         short[] voiceSamples;
         if (inSampleRate != targetVoiceRate)
         {
@@ -89,9 +88,7 @@ public static class SpuGaussianInterpolator
             voiceSamples = inputPcm.ToArray();
         }
 
-        // Шаг 2: Воспроизведение через гауссов интерполятор ЦАП SPU на частоте outputRate
-        // Аппаратный шаг питча в SPU: pitch = (voiceRate * 4096) / 44100
-        // Дробная часть: биты 4..11 счетчика питча (8 бит)
+        // Step 2: Play back through SPU DAC Gaussian interpolator at outputRate
         long totalOutputSamples = (long)Math.Ceiling((double)voiceSamples.Length * outputRate / targetVoiceRate);
         var result = new short[totalOutputSamples];
 
@@ -104,7 +101,6 @@ public static class SpuGaussianInterpolator
             double frac = currentPos - baseIdx;
             int phase8 = Math.Clamp((int)(frac * 256.0), 0, 255);
 
-            // Берем 4 соседних сэмпла с безопасным ограничением границ
             short oldest = GetSampleSafe(voiceSamples, baseIdx - 1);
             short older  = GetSampleSafe(voiceSamples, baseIdx);
             short old    = GetSampleSafe(voiceSamples, baseIdx + 1);
@@ -125,7 +121,7 @@ public static class SpuGaussianInterpolator
     }
 
     /// <summary>
-    /// Линейный ресемплер для подготовки звука к частоте голоса SPU перед воспроизведением через Гаусс.
+    /// Linear resampler for preparing audio to SPU voice rate before Gaussian interpolation.
     /// </summary>
     private static short[] SimpleResample(ReadOnlySpan<short> input, int inRate, int outRate)
     {

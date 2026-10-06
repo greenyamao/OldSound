@@ -1,26 +1,27 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 
 namespace OldSound.Core.Audio;
 
 /// <summary>
-/// Обеспечивает универсальный мост для загрузки и сохранения аудиофайлов любого формата (WAV, MP3, OGG, FLAC и т.д.).
-/// Для WAV использует нативный высокоскоростной код, для остальных форматов — прозрачный процесс FFmpeg.
+/// Universal bridge for loading and saving audio files in any format (WAV, MP3, OGG, FLAC, etc.).
+/// Uses high-speed native code for WAV and embedded/transparent FFmpeg processes for other formats.
 /// </summary>
 public static class AudioBridge
 {
     private static string? _resolvedFFmpegPath;
 
     /// <summary>
-    /// Находит путь к бинарнику FFmpeg: сначала проверяет папку приложения, затем tools, затем AppData, и лишь в конце системный PATH.
+    /// Resolves the FFmpeg binary location: checks application folder, tools, AppData, embedded resources, and system PATH.
     /// </summary>
     public static string? FindFFmpegBinary()
     {
         if (_resolvedFFmpegPath != null)
             return _resolvedFFmpegPath;
 
-        // 1. Рядом с исполняемым файлом (portable dist)
+        // 1. Next to the executable (portable dist)
         string appDir = AppContext.BaseDirectory;
         string localPath = Path.Combine(appDir, "ffmpeg.exe");
         if (File.Exists(localPath))
@@ -29,7 +30,7 @@ public static class AudioBridge
             return _resolvedFFmpegPath;
         }
 
-        // 2. В подпапках tools или bin
+        // 2. In tools or bin subfolder
         string toolsPath = Path.Combine(appDir, "tools", "ffmpeg.exe");
         if (File.Exists(toolsPath))
         {
@@ -44,7 +45,7 @@ public static class AudioBridge
             return _resolvedFFmpegPath;
         }
 
-        // 3. В профиле пользователя %LOCALAPPDATA%\OldSound\ffmpeg.exe
+        // 3. User profile %LOCALAPPDATA%\OldSound\ffmpeg.exe
         string appDataPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "OldSound", "ffmpeg.exe");
@@ -54,7 +55,7 @@ public static class AudioBridge
             return _resolvedFFmpegPath;
         }
 
-        // 4. Автоматическая распаковка встроенного в сборку FFmpeg (Offline Monolithic)
+        // 4. Automatic extraction of embedded FFmpeg (monolithic single-file)
         string? extracted = TryExtractEmbeddedFFmpeg(appDataPath);
         if (extracted != null && File.Exists(extracted))
         {
@@ -62,7 +63,7 @@ public static class AudioBridge
             return _resolvedFFmpegPath;
         }
 
-        // 5. Проверка системного PATH
+        // 5. System PATH check
         try
         {
             var psi = new ProcessStartInfo
@@ -153,12 +154,12 @@ public static class AudioBridge
     public static bool IsFFmpegAvailable() => FindFFmpegBinary() != null;
 
     /// <summary>
-    /// Загружает аудиофайл любого поддерживаемого формата в память.
+    /// Loads an audio file of any supported format into memory.
     /// </summary>
     public static AudioBuffer Load(string filePath)
     {
         if (!File.Exists(filePath))
-            throw new FileNotFoundException($"Файл '{filePath}' не найден.");
+            throw new FileNotFoundException($"File '{filePath}' not found.");
 
         string ext = Path.GetExtension(filePath).ToLowerInvariant();
 
@@ -170,9 +171,9 @@ public static class AudioBridge
 
         string? ffmpegPath = FindFFmpegBinary();
         if (ffmpegPath == null)
-            throw new InvalidOperationException($"Для открытия формата '{ext}' требуется FFmpeg (поместите ffmpeg.exe рядом с приложением или добавьте в PATH).");
+            throw new InvalidOperationException($"Opening format '{ext}' requires FFmpeg (place ffmpeg.exe next to application or add to PATH).");
 
-        // Декодируем в WAV поток через FFmpeg
+        // Decode to WAV stream via FFmpeg
         var psi = new ProcessStartInfo
         {
             FileName = ffmpegPath,
@@ -184,7 +185,7 @@ public static class AudioBridge
         };
 
         using var proc = Process.Start(psi)
-            ?? throw new InvalidOperationException("Не удалось запустить процесс FFmpeg.");
+            ?? throw new InvalidOperationException("Failed to launch FFmpeg process.");
 
         using var ms = new MemoryStream();
         proc.StandardOutput.BaseStream.CopyTo(ms);
@@ -193,7 +194,7 @@ public static class AudioBridge
         if (proc.ExitCode != 0)
         {
             string err = proc.StandardError.ReadToEnd();
-            throw new InvalidOperationException($"Ошибка декодирования FFmpeg: {err}");
+            throw new InvalidOperationException($"FFmpeg decoding error: {err}");
         }
 
         ms.Position = 0;
@@ -201,7 +202,7 @@ public static class AudioBridge
     }
 
     /// <summary>
-    /// Сохраняет аудио-буфер в файл целевого формата.
+    /// Saves audio buffer to target file format.
     /// </summary>
     public static void Save(AudioBuffer buffer, string filePath, int mp3BitrateKbps = 320, int wavBitsPerSample = 16)
     {
@@ -222,9 +223,9 @@ public static class AudioBridge
 
         string? ffmpegPath = FindFFmpegBinary();
         if (ffmpegPath == null)
-            throw new InvalidOperationException($"Для кодирования в формат '{ext}' требуется FFmpeg (поместите ffmpeg.exe рядом с приложением или добавьте в PATH).");
+            throw new InvalidOperationException($"Encoding format '{ext}' requires FFmpeg (place ffmpeg.exe next to application or add to PATH).");
 
-        // Сначала генерируем WAV в памяти
+        // Write WAV to memory stream first
         using var wavMs = new MemoryStream();
         WavCodec.Write(buffer, wavMs, 16);
         wavMs.Position = 0;
@@ -249,7 +250,7 @@ public static class AudioBridge
         };
 
         using var proc = Process.Start(psi)
-            ?? throw new InvalidOperationException("Не удалось запустить процесс FFmpeg для записи.");
+            ?? throw new InvalidOperationException("Failed to launch FFmpeg process for writing.");
 
         wavMs.CopyTo(proc.StandardInput.BaseStream);
         proc.StandardInput.BaseStream.Flush();
@@ -260,7 +261,7 @@ public static class AudioBridge
         if (proc.ExitCode != 0)
         {
             string err = proc.StandardError.ReadToEnd();
-            throw new InvalidOperationException($"Ошибка кодирования FFmpeg: {err}");
+            throw new InvalidOperationException($"FFmpeg encoding error: {err}");
         }
     }
 }

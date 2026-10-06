@@ -13,7 +13,7 @@ public class Sdx2CodecTests
         var original = new short[length];
         for (int i = 0; i < length; i++)
         {
-            // 440 Hz синус при 22050 Гц с размахом 16000
+            // 440 Hz sine at 22050 Hz with 16000 peak amplitude
             original[i] = (short)(Math.Sin(2.0 * Math.PI * 440.0 * i / 22050.0) * 16000.0);
         }
 
@@ -21,7 +21,7 @@ public class Sdx2CodecTests
 
         Assert.Equal(original.Length, processed.Length);
 
-        // Проверяем корреляцию (сигнал должен точно следовать за оригиналом)
+        // Verify correlation (reconstructed signal should closely follow original)
         double dotProduct = 0;
         double normOrig = 0;
         double normProc = 0;
@@ -33,13 +33,13 @@ public class Sdx2CodecTests
         }
 
         double correlation = dotProduct / (Math.Sqrt(normOrig) * Math.Sqrt(normProc));
-        Assert.True(correlation > 0.98, $"Корреляция SDX2 ({correlation}) должна быть выше 0.98 для плавного синуса.");
+        Assert.True(correlation > 0.98, $"SDX2 correlation ({correlation}) must be higher than 0.98 for smooth sine wave.");
     }
 
     [Fact]
     public void Encode_SuddenStepJump_DemonstratesSlewRateLimiting()
     {
-        // Резкий фронт меандра от 0 до 30000 за 1 сэмпл
+        // Sharp step jump from 0 to 30000 in 1 sample
         var step = new short[50];
         for (int i = 5; i < 50; i++)
         {
@@ -48,9 +48,9 @@ public class Sdx2CodecTests
 
         short[] reconstructed = Sdx2Codec.ProcessPcm(step);
 
-        // При резком скачке отсчет не может мгновенно стать 30000 в первом же сэмпле (slew-rate limiting)
-        // SDX2 за 1 шаг может восстановить максимум rec_delta = 2 * (127)^2 = 32258,
-        // но на следующем шаге шаг дельты мягко догоняет форму волны
+        // On sharp step jumps, output cannot instantaneously reach 30000 on the first sample (slew-rate limiting)
+        // SDX2 in 1 step can reconstruct at most rec_delta = 2 * (127)^2 = 32258,
+        // but over subsequent steps the delta steps smoothly track the waveform
         Assert.True(reconstructed[5] > 0);
         Assert.True(reconstructed[10] > 28000);
     }

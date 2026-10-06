@@ -3,36 +3,36 @@ using System;
 namespace OldSound.Core.Dsp;
 
 /// <summary>
-/// Настройки эмулятора аналоговой компакт-кассеты.
+/// Settings for analog compact cassette emulation.
 /// </summary>
 public sealed class CassetteTapeSettings
 {
-    /// <summary>Уровень магнитного насыщения ленты (1.0 = легкое насыщение, 1.5–2.0 = выраженная компрессия).</summary>
+    /// <summary>Magnetic tape saturation drive (1.0 = light saturation, 1.5–2.0 = pronounced compression).</summary>
     public float Drive { get; set; } = 1.4f;
 
-    /// <summary>Глубина детонации Wow (медленное плавание питча 0.5-1.5 Гц, диапазон 0.0 .. 1.0).</summary>
+    /// <summary>Wow depth (slow pitch drift 0.5-1.5 Hz, range 0.0 .. 1.0).</summary>
     public float WowDepth { get; set; } = 0.20f;
 
-    /// <summary>Глубина детонации Flutter (быстрое дрожание питча 6-12 Гц, диапазон 0.0 .. 1.0).</summary>
+    /// <summary>Flutter depth (fast pitch flutter 6-12 Hz, range 0.0 .. 1.0).</summary>
     public float FlutterDepth { get; set; } = 0.15f;
 
-    /// <summary>Уровень аналогового шума магнитной ленты (0.0 = выключен, 1.0 = тонкий фон ~ -60 dB).</summary>
+    /// <summary>Analog tape hiss level (0.0 = off, 1.0 = subtle background ~ -60 dB).</summary>
     public float HissLevel { get; set; } = 0.20f;
 
-    /// <summary>Частота среза зазора магнитной головки (Head Loss Low-Pass, 8000..16000 Гц).</summary>
+    /// <summary>Tape head gap loss low-pass cutoff (8000..16000 Hz).</summary>
     public float CutoffHz { get; set; } = 12000f;
 
-    /// <summary>Включить резонанс воспроизводящей головки (Head Bump 65 Гц и спад верха).</summary>
+    /// <summary>Enable playback head resonance (Head Bump 65 Hz and high roll-off).</summary>
     public bool EnableHeadEq { get; set; } = true;
 
-    /// <summary>Соотношение обработанного и сухого сигнала (0.0 .. 1.0).</summary>
+    /// <summary>Wet/dry mix ratio (0.0 .. 1.0).</summary>
     public float Mix { get; set; } = 1.0f;
 }
 
 /// <summary>
-/// Эмулятор аналоговой компакт-кассеты: нелинейное насыщение магнитной ленты,
-/// резонанс головки (Head Bump), детонация механизма (Wow & Flutter) и аналоговый шум (Hiss).
-/// Гарантирует правильный гейн-стейджинг без клиппинга и цифрового перегруза.
+/// Analog compact cassette emulator: non-linear tape saturation,
+/// head bump EQ, wow & flutter modulation, and analog tape hiss.
+/// Maintains gain staging to prevent digital clipping.
 /// </summary>
 public sealed class CassetteTapeSimulator
 {
@@ -78,7 +78,7 @@ public sealed class CassetteTapeSimulator
     private void InitFilters(int sampleRate)
     {
         float f0 = 65.0f;
-        float gainDb = 2.0f; // Умеренный, музыкальный подъем баса +2.0 dB
+        float gainDb = 2.0f; // Moderate bass lift +2.0 dB
         float q = 0.8f;
 
         float a = MathF.Pow(10.0f, gainDb / 40.0f);
@@ -94,7 +94,7 @@ public sealed class CassetteTapeSimulator
         float a1 = -2.0f * ((a - 1.0f) + (a + 1.0f) * cosW0);
         float a2 = (a + 1.0f) + (a - 1.0f) * cosW0 - 2.0f * MathF.Sqrt(a) * alpha;
 
-        // Компенсация гейна для предотвращения перегруза (+2 dB EQ -> -1.5 dB compensation)
+        // Gain compensation to prevent clipping (+2 dB EQ -> -1.2 dB compensation)
         float comp = MathF.Pow(10.0f, -1.2f / 20.0f);
         _b0 = (b0 / a0) * comp;
         _b1 = (b1 / a0) * comp;
@@ -124,7 +124,7 @@ public sealed class CassetteTapeSimulator
             float dryL = left[i];
             float dryR = right[i];
 
-            // 1. Детонация Wow & Flutter
+            // 1. Wow & Flutter modulation
             double wow = Math.Sin(_wowPhase) * _settings.WowDepth;
             double flutter = Math.Sin(_flutterPhase) * _settings.FlutterDepth;
             double totalMod = (wow + flutter) * maxModulationSamples;
@@ -151,11 +151,11 @@ public sealed class CassetteTapeSimulator
 
             _delayWritePos = (_delayWritePos + 1) % MaxDelaySamples;
 
-            // 2. Мягкая магнитная сатурация с нормализованным выходом
+            // 2. Non-linear magnetic tape saturation with normalized ceiling
             wetL = SaturateTape(wetL, drive);
             wetR = SaturateTape(wetR, drive);
 
-            // 3. Head Bump EQ и Head Loss
+            // 3. Head bump EQ and gap loss
             if (_settings.EnableHeadEq)
             {
                 float yL = _b0 * wetL + _b1 * _eqX1L + _b2 * _eqX2L - _a1 * _eqY1L - _a2 * _eqY2L;
@@ -174,7 +174,7 @@ public sealed class CassetteTapeSimulator
                 wetR = _lpPrevR;
             }
 
-            // 4. Тонкий шум ленты
+            // 4. Subtle tape hiss
             if (hissAmp > 0.000001f)
             {
                 float wL = (float)(_random.NextDouble() * 2.0 - 1.0);
@@ -194,7 +194,7 @@ public sealed class CassetteTapeSimulator
                 wetR += pinkR * hissAmp;
             }
 
-            // 5. Микс и безопасный мягкий лимитер
+            // 5. Mix and soft limiter
             float mixL = dryL + _settings.Mix * (wetL - dryL);
             float mixR = dryR + _settings.Mix * (wetR - dryR);
 
