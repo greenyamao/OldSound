@@ -48,15 +48,15 @@ public sealed class AudioBuffer
     }
 
     /// <summary>
-    /// Конвертирует канал в 16-битный PCM массив [-32768, 32767] для подачи в ADPCM кодек.
+    /// Конвертирует канал в 16-битный PCM массив [-32768, 32767] с опциональным масштабированием (headroom gain).
     /// </summary>
-    public short[] ToPcm16(int channel)
+    public short[] ToPcm16(int channel, float gain = 1.0f)
     {
         var src = GetChannelSpan(channel);
         var dst = new short[LengthSamples];
         for (int i = 0; i < LengthSamples; i++)
         {
-            float val = src[i] * 32767.0f;
+            float val = src[i] * gain * 32767.0f;
             if (val > 32767.0f) val = 32767.0f;
             else if (val < -32768.0f) val = -32768.0f;
             dst[i] = (short)MathF.Round(val);
@@ -65,15 +65,16 @@ public sealed class AudioBuffer
     }
 
     /// <summary>
-    /// Заполняет канал из 16-битного PCM массива.
+    /// Заполняет канал из 16-битного PCM массива с опциональным обратным масштабированием.
     /// </summary>
-    public void FromPcm16(int channel, ReadOnlySpan<short> pcm)
+    public void FromPcm16(int channel, ReadOnlySpan<short> pcm, float gain = 1.0f)
     {
         var dst = GetChannelSpan(channel);
         int count = Math.Min(dst.Length, pcm.Length);
+        float factor = gain / 32768.0f;
         for (int i = 0; i < count; i++)
         {
-            dst[i] = pcm[i] / 32768.0f;
+            dst[i] = pcm[i] * factor;
         }
     }
 

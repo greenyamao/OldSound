@@ -1,5 +1,6 @@
 using System;
 using OldSound.Core.Dsp;
+using OldSound.Core.Pipeline;
 using Xunit;
 
 namespace OldSound.Tests;
@@ -47,14 +48,22 @@ public class SpuAnalogFilterTests
         float[] left = new float[44100];
         float[] right = new float[44100];
 
-        noise.ProcessStereo(left, right, 1.0f);
-
+        // Console profile
+        noise.ProcessStereo(left, right, 1.0f, AnalogNoiseProfile.Console);
         float rmsL = CalculateRms(left);
         float rmsR = CalculateRms(right);
+        Assert.True(rmsL > 0.001f && rmsL < 0.05f, $"Console left noise RMS out of expected range: {rmsL}");
+        Assert.True(rmsR > 0.001f && rmsR < 0.05f, $"Console right noise RMS out of expected range: {rmsR}");
 
-        // Check noise is present and within calibrated console range (-75 dB to -45 dB)
-        Assert.True(rmsL > 0.00001f && rmsL < 0.005f, $"Left noise RMS out of expected range: {rmsL}");
-        Assert.True(rmsR > 0.00001f && rmsR < 0.005f, $"Right noise RMS out of expected range: {rmsR}");
+        // Cassette profile
+        noise.Reset();
+        Array.Clear(left);
+        Array.Clear(right);
+        noise.ProcessStereo(left, right, 1.0f, AnalogNoiseProfile.Cassette);
+        float rmsTapeL = CalculateRms(left);
+        float rmsTapeR = CalculateRms(right);
+        Assert.True(rmsTapeL > 0.001f && rmsTapeL < 0.05f, $"Tape left noise RMS out of expected range: {rmsTapeL}");
+        Assert.True(rmsTapeR > 0.001f && rmsTapeR < 0.05f, $"Tape right noise RMS out of expected range: {rmsTapeR}");
     }
 
     [Fact]

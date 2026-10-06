@@ -36,6 +36,18 @@ public enum InterpolationType
 }
 
 /// <summary>
+/// Профиль физического аналогового шума тракта.
+/// </summary>
+public enum AnalogNoiseProfile
+{
+    /// <summary>Консольный тракт (PS1/3DO SPU DAC, сетевой фон БП 50/100 Гц, CRT/DMA whine 15.6 кГц, фильтр 16.5 кГц).</summary>
+    Console,
+
+    /// <summary>Аналоговая компакт-кассета (Type I NAB 120µs, шелковый подъем 8.2 кГц, срез головки 14.2 кГц, рокот мотора 50/68 Гц).</summary>
+    Cassette
+}
+
+/// <summary>
 /// Профиль звучания и параметры исторического тракта воспроизведения.
 /// </summary>
 public sealed class AudioPreset
@@ -69,6 +81,9 @@ public sealed class AudioPreset
 
     /// <summary>Уровень аналогового фона матрицы ЦАП (0.0 = выкл, 1.0 = тонкий консольный фон ~ -66 dBFS).</summary>
     public float SpuNoiseLevel { get; set; } = 0.5f;
+
+    /// <summary>Модель аналогового шума (Console: SPU ЦАП/БП/развертка; Cassette: лента NAB/шелк/моторчик).</summary>
+    public AnalogNoiseProfile NoiseProfile { get; set; } = AnalogNoiseProfile.Console;
 
     /// <summary>Мягкая аналоговая сатурация шины суммирования (0.0 = выкл, 1.0 = норма).</summary>
     public float BusGlue { get; set; } = 0.5f;

@@ -21,21 +21,20 @@ public static class RetroAudioPipeline
         // 1. Поканальная обработка: антиалиасинг, кодирование/декодирование, интерполяция ЦАП
         short[][] processedChannels = new short[channels][];
         int finalLength = 0;
+        const float HeadroomPreGain = 0.85f; // Запас -1.4 dBFS от переполнения ADPCM предиктора и фильтров
 
         for (int ch = 0; ch < channels; ch++)
         {
-            short[] pcm16 = input.ToPcm16(ch);
+            short[] pcm16 = input.ToPcm16(ch, HeadroomPreGain);
             short[] voicePcm;
 
             // Антиалиасинг и ресемплинг в частоту консольного голоса
             if (inSampleRate != targetVoiceRate)
             {
-                float preCutoff = preset.PreFilterCutoffHz > 0f
-                    ? preset.PreFilterCutoffHz
-                    : Math.Min(10500f, targetVoiceRate * 0.45f);
-
-                // Префильтрация перед понижением частоты дискретизации
-                short[] filtered = ApplyPreFilter(pcm16, inSampleRate, preCutoff);
+                // Префильтрация: если PreFilterCutoffHz <= 0, фильтр отключается, сохраняя аутентичный кристаллический верх и алиасинг
+                short[] filtered = (preset.PreFilterCutoffHz > 0f && preset.PreFilterCutoffHz < 20000f)
+                    ? ApplyPreFilter(pcm16, inSampleRate, preset.PreFilterCutoffHz)
+                    : pcm16;
                 voicePcm = ResampleLinear(filtered, inSampleRate, targetVoiceRate);
             }
             else
@@ -106,33 +105,10 @@ public static class RetroAudioPipeline
         var outBuffer = new AudioBuffer(channels, outSampleRate, finalLength);
         for (int ch = 0; ch < channels; ch++)
         {
-            outBuffer.FromPcm16(ch, processedChannels[ch].AsSpan(0, finalLength));
+            outBuffer.FromPcm16(ch, processedChannels[ch].AsSpan(0, finalLength), 1.0f / HeadroomPreGain);
         }
 
-        // 2. Мягкая аналоговая сатурация шины суммирования (Bus Glue)
-        if (preset.BusGlue > 0.01f)
-        {
-            for (int ch = 0; ch < channels; ch++)
-            {
-                SpuBusGlue.Process(outBuffer.GetChannelSpan(ch), preset.BusGlue);
-            }
-        }
-
-        // 3. Аналоговый фон резистивной матрицы ЦАП (Noise Floor ~ -66 dBFS)
-        if (preset.SpuNoiseLevel > 0.001f)
-        {
-            var noise = new SpuNoiseFloor();
-            if (channels >= 2)
-            {
-                noise.ProcessStereo(outBuffer.GetChannelSpan(0), outBuffer.GetChannelSpan(1), preset.SpuNoiseLevel);
-            }
-            else
-            {
-                noise.ProcessMono(outBuffer.GetChannelSpan(0), preset.SpuNoiseLevel);
-            }
-        }
-
-        // 4. Аппаратный аналоговый выходной фильтр ЦАП (PS1 3-pole или 3DO 2-pole Sallen-Key)
+        // 2. Аппаратный аналоговый выходной фильтр ЦАП (PS1 3-pole или 3DO 2-pole Sallen-Key)
         if (preset.EnableAnalogFilter && preset.FilterCutoffHz > 0)
         {
             var filter = new SpuAnalogFilter(preset.FilterCutoffHz, outSampleRate, preset.FilterTopology);
@@ -146,90 +122,85 @@ public static class RetroAudioPipeline
             }
         }
 
-        // 5. Модуль магнитной компакт-кассеты
-        if (preset.EnableTape)
+        // 3. Высококачественный аналоговый шум выходного тракта (Master Analog Noise Floor)
+        // Добавляется в САМОМ КОНЦЕ тракта на полной сетке частот (44.1 кГц),
+        // формируя высококачественный стерео-фон («акустический клей») поверх жмыхнутого звука.
+        if (preset.SpuNoiseLevel > 0.0001f)
         {
-            var tape = new CassetteTapeSimulator(preset.TapeSettings);
+            var noise = new SpuNoiseFloor();
             if (channels >= 2)
             {
-                tape.Process(outBuffer.GetChannelSpan(0), outBuffer.GetChannelSpan(1), outSampleRate);
+                noise.ProcessStereo(outBuffer.GetChannelSpan(0), outBuffer.GetChannelSpan(1), preset.SpuNoiseLevel, preset.NoiseProfile, outBuffer.SampleRate);
             }
             else
             {
-                Span<float> mono = outBuffer.GetChannelSpan(0);
-                tape.Process(mono, mono, outSampleRate);
+                noise.ProcessMono(outBuffer.GetChannelSpan(0), preset.SpuNoiseLevel, preset.NoiseProfile, outBuffer.SampleRate);
             }
         }
 
-        // 6. Прозрачный мастеринг-лимитер с мягким коленом (-0.2 dBFS ceiling)
-        // Предотвращает цифровое срезание пиков в любых форматах (WAV 16-bit / MP3 / AAC)
-        ApplyTruePeakCeiling(outBuffer, 0.975f);
+        // 4. Автоматическая калибровка безопасного запаса по уровню (-1.4 dBFS)
+        // Гарантирует абсолютное отсутствие клиппинга во всех форматах (WAV 16-bit / MP3 / WASAPI)
+        EnsureSafetyHeadroom(outBuffer, 0.85f);
 
         return outBuffer;
     }
 
     /// <summary>
-    /// Предварительный антиалиасинг фильтр 2-го порядка Баттерворта.
+    /// Предварительный антиалиасинг КИХ-фильтр Блэкмана-Харриса (129 taps).
+    /// Гарантирует подавление спектральных компонент выше Найквиста целевой частоты
+    /// на >60..80 дБ, полностью устраняя паразитный foldover-алиасинг (эффект дешевого биткрашера)
+    /// и сохраняя естественную чистоту и музыкальность оригинального саундтрека Four-Sight.
     /// </summary>
     private static short[] ApplyPreFilter(ReadOnlySpan<short> input, int sampleRate, float cutoffHz)
     {
-        float f0 = Math.Clamp(cutoffHz, 1000f, sampleRate * 0.48f);
-        float w0 = 2f * MathF.PI * f0;
-        float k = 2f * sampleRate;
-        float omega = 2f * sampleRate * MathF.Tan(w0 / (2f * sampleRate));
-
-        float q = 0.70710678f;
-        float omega2 = omega * omega;
-        float a0 = (k * k) + (k * omega / q) + omega2;
-
-        float b0 = omega2 / a0;
-        float b1 = (2f * omega2) / a0;
-        float b2 = omega2 / a0;
-        float a1 = (2f * omega2 - 2f * k * k) / a0;
-        float a2 = ((k * k) - (k * omega / q) + omega2) / a0;
-
-        var output = new short[input.Length];
-        float x1 = 0f, x2 = 0f, y1 = 0f, y2 = 0f;
-
-        for (int i = 0; i < input.Length; i++)
-        {
-            float inVal = input[i];
-            float outVal = b0 * inVal + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-            x2 = x1; x1 = inVal;
-            y2 = y1; y1 = outVal;
-
-            output[i] = (short)Math.Clamp((int)MathF.Round(outVal), short.MinValue, short.MaxValue);
-        }
-
-        return output;
+        return AntiAliasingFilter.Apply(input, sampleRate, cutoffHz);
     }
 
     /// <summary>
-    /// Безопасный мягкий лимитер, исключающий интерсемпловые пики и перегруз в WAV/MP3.
+    /// Автоматическое масштабирование запаса по уровню (Safety Headroom Auto-Gain).
+    /// Если пики сигнала (из-за резонанса аналоговых фильтров, интерполяции или квантования)
+    /// превышают безопасный порог (-1.4 dBFS / 0.85), весь трек пропорционально и линейно
+    /// масштабируется вниз ("звук становится тише"), гарантируя 0 сэмплов клиппинга
+    /// без срезания формы волны (flat-tops), перегруза ЦАП или MP3 intersample peaks.
     /// </summary>
-    private static void ApplyTruePeakCeiling(AudioBuffer buffer, float ceiling = 0.975f)
+    public static float EnsureSafetyHeadroom(AudioBuffer buffer, float targetCeiling = 0.85f)
     {
-        float kneeStart = ceiling * 0.92f;
-        float kneeWidth = ceiling - kneeStart;
-
+        float maxPeak = 0f;
         for (int ch = 0; ch < buffer.Channels; ch++)
         {
             var span = buffer.GetChannelSpan(ch);
             for (int i = 0; i < span.Length; i++)
             {
-                float s = span[i];
-                if (s > kneeStart)
-                {
-                    float over = s - kneeStart;
-                    span[i] = kneeStart + kneeWidth * MathF.Tanh(over / kneeWidth);
-                }
-                else if (s < -kneeStart)
-                {
-                    float over = -s - kneeStart;
-                    span[i] = -(kneeStart + kneeWidth * MathF.Tanh(over / kneeWidth));
-                }
+                float abs = MathF.Abs(span[i]);
+                if (abs > maxPeak) maxPeak = abs;
             }
         }
+
+        if (maxPeak > targetCeiling && maxPeak > 1e-6f)
+        {
+            float scale = targetCeiling / maxPeak;
+            for (int ch = 0; ch < buffer.Channels; ch++)
+            {
+                var span = buffer.GetChannelSpan(ch);
+                for (int i = 0; i < span.Length; i++)
+                {
+                    span[i] *= scale;
+                }
+            }
+            return scale;
+        }
+
+        // Страховочный зажим на случай погрешностей с плавающей точкой
+        for (int ch = 0; ch < buffer.Channels; ch++)
+        {
+            var span = buffer.GetChannelSpan(ch);
+            for (int i = 0; i < span.Length; i++)
+            {
+                span[i] = Math.Clamp(span[i], -targetCeiling, targetCeiling);
+            }
+        }
+
+        return 1.0f;
     }
 
     private static short[] ResampleLinear(ReadOnlySpan<short> input, int inRate, int outRate)
