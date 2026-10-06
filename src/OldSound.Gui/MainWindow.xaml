@@ -6,13 +6,13 @@
                   Height="700" Width="980"
                   MinHeight="600" MinWidth="860"
                   WindowStartupLocation="CenterScreen"
-                  WindowBackdropType="Auto"
+                  WindowBackdropType="None"
                   ExtendsContentIntoTitleBar="True"
                   AllowDrop="True"
                   Drop="Window_Drop"
                   DragOver="Window_DragOver">
 
-    <Grid>
+    <Grid Background="{DynamicResource ApplicationBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
