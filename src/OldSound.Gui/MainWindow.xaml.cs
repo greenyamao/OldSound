@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -11,14 +13,17 @@ using Microsoft.Win32;
 using OldSound.Core.Audio;
 using OldSound.Core.Dsp;
 using OldSound.Core.Pipeline;
+using Wpf.Ui.Controls;
+using MessageBoxButton = System.Windows.MessageBoxButton;
 
 namespace OldSound.Gui;
 
-public partial class MainWindow : Window
+public partial class MainWindow : FluentWindow
 {
     private string? _inputFilePath;
     private AudioBuffer? _inputBuffer;
     private AudioBuffer? _outputBuffer;
+    private string? _tempOriginalPath;
     private string? _tempProcessedPath;
     private string? _lastSavedPath;
 
@@ -28,68 +33,253 @@ public partial class MainWindow : Window
     private bool _isUpdatingUiFromPreset = false;
     private bool _isInitialized = false;
 
+    private bool _isSwitchingSource = false;
+    private TimeSpan? _pendingSeekPosition = null;
+    private bool _wasPlayingBeforeSwitch = false;
+
+    private AudioPreset _currentPreset;
+
+    public record PresetItem(string Key, string Title, AudioPreset Preset);
+
     public MainWindow()
     {
         InitializeComponent();
         _isInitialized = true;
 
-        _timer.Interval = TimeSpan.FromMilliseconds(200);
+        RbSourceProcessed.IsChecked = true;
+        _currentPreset = PresetRegistry.Get(PresetRegistry.DefaultPresetName);
+
+        _timer.Interval = TimeSpan.FromMilliseconds(150);
         _timer.Tick += Timer_Tick;
 
         _player.MediaOpened += (s, e) =>
         {
+            _isSwitchingSource = false;
+
             if (_player.NaturalDuration.HasTimeSpan)
             {
                 SliderTimeline.Maximum = _player.NaturalDuration.TimeSpan.TotalSeconds;
                 TxtTimeTotal.Text = FormatTime(_player.NaturalDuration.TimeSpan);
             }
+
+            if (_pendingSeekPosition.HasValue)
+            {
+                try
+                {
+                    _player.Position = _pendingSeekPosition.Value;
+                }
+                catch { }
+                _pendingSeekPosition = null;
+            }
+
+            if (_wasPlayingBeforeSwitch)
+            {
+                _player.Play();
+                _timer.Start();
+                BtnPlay.Content = "Pause";
+            }
+        };
+
+        _player.MediaFailed += (s, e) =>
+        {
+            _isSwitchingSource = false;
         };
 
         _player.MediaEnded += (s, e) =>
         {
+            if (_isSwitchingSource) return;
+            if (_player.NaturalDuration.HasTimeSpan && _player.Position < _player.NaturalDuration.TimeSpan - TimeSpan.FromMilliseconds(500))
+            {
+                return;
+            }
+
             _player.Stop();
             _timer.Stop();
-            BtnPlay.Content = "▶ Воспроизвести";
+            BtnPlay.Content = "Play";
             SliderTimeline.Value = 0;
             TxtTimeCurrent.Text = "00:00";
         };
 
-        // Инициализируем пресет по умолчанию (Four-Sight 3DO)
+        PopulatePresets();
+    }
+
+    private static string FormatPresetTitle(string name) => name switch
+    {
+        "four-sight-1995" => "★ Four-Sight (1995 3DO SDX2)",
+        "ps1-spu-1994" => "PlayStation (1994 SPU VAG)",
+        "cassette-type1" => "Компакт-кассета (Type I Tape)",
+        _ => name
+    };
+
+    private void PopulatePresets()
+    {
+        var order = new[] { "four-sight-1995", "ps1-spu-1994", "cassette-type1" };
+        var allPresets = PresetRegistry.GetAll().ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
+
+        var items = new List<PresetItem>();
+        foreach (var key in order)
+        {
+            if (allPresets.TryGetValue(key, out var p))
+            {
+                items.Add(new PresetItem(p.Name, FormatPresetTitle(p.Name), p));
+            }
+        }
+
+        ComboPresets.ItemsSource = items;
+        ComboPresets.DisplayMemberPath = "Title";
+        ComboPresets.SelectedIndex = 0;
+    }
+
+    private void ComboPresets_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_isInitialized || ComboPresets.SelectedItem is not PresetItem item) return;
+        LoadPresetToControls(item.Preset);
+    }
+
+    private void LoadPresetToControls(AudioPreset p)
+    {
+        _isUpdatingUiFromPreset = true;
         try
         {
-            Rb3DoFourSight.IsChecked = true;
-            LoadPresetToControls("four-sight-3do");
-        }
-        catch { }
-    }
+            _currentPreset = p;
 
-    private void Timer_Tick(object? sender, EventArgs e)
-    {
-        if (!_isDraggingTimeline && _player.NaturalDuration.HasTimeSpan)
+            // Codec: 0 = SDX2 (8-bit delta), 1 = 4-Bit (adpcm), 2 = Bypass
+            ComboCodec.SelectedIndex = p.Codec switch
+            {
+                AudioCodecType.Sdx2_3Do => 0,
+                AudioCodecType.SonyAdpcm => 1,
+                _ => 2
+            };
+
+            // Interpolation: 0 = 3DO Linear, 1 = Raw Steps, 2 = Gaussian, 3 = Bypass
+            ComboInterp.SelectedIndex = p.Interpolation switch
+            {
+                InterpolationType.Linear3DoHalfRate => 0,
+                InterpolationType.Linear => 1,
+                InterpolationType.Gaussian4Point => 2,
+                _ => 3
+            };
+
+            // Clock Rate
+            SliderVoiceRate.Value = p.SpuVoiceRate;
+            TxtVoiceRate.Text = $"{p.SpuVoiceRate} Hz";
+
+            // Crystalline Aliasing Switch
+            SwitchAliasing.IsChecked = (p.PreFilterCutoffHz <= 0f);
+
+            // Filter Cutoff
+            SliderFilterCutoff.Value = p.FilterCutoffHz;
+            TxtFilterCutoff.Text = $"{p.FilterCutoffHz:F0} Hz";
+
+            // Noise Model & Floor (Master Analog)
+            ComboNoiseProfile.SelectedIndex = (p.NoiseProfile == AnalogNoiseProfile.Cassette) ? 1 : 0;
+            SliderNoise.Value = p.SpuNoiseLevel;
+            TxtNoise.Text = (p.SpuNoiseLevel > 0.001f) ? $"{(int)(p.SpuNoiseLevel * 100)}%" : "Off";
+
+            UpdateMetrics(p);
+        }
+        finally
         {
-            double pos = _player.Position.TotalSeconds;
-            SliderTimeline.Value = pos;
-            TxtTimeCurrent.Text = FormatTime(_player.Position);
+            _isUpdatingUiFromPreset = false;
         }
     }
 
-    private static string FormatTime(TimeSpan ts)
+    private void UpdateMetrics(AudioPreset p)
     {
-        return $"{(int)ts.TotalMinutes:D2}:{ts.Seconds:D2}";
+        string codecStr = p.Codec switch
+        {
+            AudioCodecType.SonyAdpcm => "4-Bit",
+            AudioCodecType.Sdx2_3Do => "SDX2",
+            _ => "PCM"
+        };
+        string dacStr = p.Interpolation switch
+        {
+            InterpolationType.Linear3DoHalfRate => "3DO Linear",
+            InterpolationType.Linear => "Raw Steps",
+            InterpolationType.Gaussian4Point => "Gaussian",
+            _ => "Bypass"
+        };
+        string aliasStr = (SwitchAliasing.IsChecked == true) ? "Raw Aliased" : "Studio AA (Clean)";
+        string noiseType = (ComboNoiseProfile?.SelectedIndex == 1) ? "Tape" : "SPU";
+        string noiseStr = (p.SpuNoiseLevel > 0.001f) ? $"{noiseType} {(int)(p.SpuNoiseLevel * 100)}%" : "Clean";
+
+        TxtStatBar.Text = $"{codecStr} • {p.SpuVoiceRate} Hz • {dacStr} • {aliasStr} • {noiseStr}";
+    }
+
+    private void ComboNoiseProfile_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_isInitialized || _isUpdatingUiFromPreset) return;
+        _currentPreset.NoiseProfile = (ComboNoiseProfile.SelectedIndex == 1)
+            ? AnalogNoiseProfile.Cassette
+            : AnalogNoiseProfile.Console;
+        UpdateMetrics(_currentPreset);
+    }
+
+    private void ComboCodec_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_isInitialized || _isUpdatingUiFromPreset) return;
+        _currentPreset.Codec = ComboCodec.SelectedIndex switch
+        {
+            0 => AudioCodecType.Sdx2_3Do,
+            1 => AudioCodecType.SonyAdpcm,
+            _ => AudioCodecType.Bypass
+        };
+        UpdateMetrics(_currentPreset);
+    }
+
+    private void ComboInterp_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_isInitialized || _isUpdatingUiFromPreset) return;
+        _currentPreset.Interpolation = ComboInterp.SelectedIndex switch
+        {
+            0 => InterpolationType.Linear3DoHalfRate,
+            1 => InterpolationType.Linear,
+            2 => InterpolationType.Gaussian4Point,
+            _ => InterpolationType.Bypass
+        };
+        UpdateMetrics(_currentPreset);
+    }
+
+    private void Slider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!_isInitialized || _isUpdatingUiFromPreset) return;
+
+        if (sender == SliderVoiceRate && TxtVoiceRate != null)
+        {
+            TxtVoiceRate.Text = $"{(int)SliderVoiceRate.Value} Hz";
+            _currentPreset.SpuVoiceRate = (int)SliderVoiceRate.Value;
+        }
+        else if (sender == SliderFilterCutoff && TxtFilterCutoff != null)
+        {
+            TxtFilterCutoff.Text = $"{SliderFilterCutoff.Value:F0} Hz";
+            _currentPreset.FilterCutoffHz = (float)SliderFilterCutoff.Value;
+        }
+        else if (sender == SliderNoise && TxtNoise != null)
+        {
+            float val = (float)SliderNoise.Value;
+            TxtNoise.Text = (val > 0.001f) ? $"{(int)(val * 100)}%" : "Off";
+            _currentPreset.SpuNoiseLevel = val;
+        }
+        UpdateMetrics(_currentPreset);
+    }
+
+    private void SwitchAliasing_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_isInitialized || _isUpdatingUiFromPreset) return;
+        _currentPreset.PreFilterCutoffHz = (SwitchAliasing.IsChecked == true) ? 0f : 10500f;
+        UpdateMetrics(_currentPreset);
+    }
+
+    private void BtnReset_Click(object sender, RoutedEventArgs e)
+    {
+        ComboPresets.SelectedIndex = 0;
     }
 
     #region Drag & Drop and File Selection
 
     private void Window_DragOver(object sender, DragEventArgs e)
     {
-        if (e.Data.GetDataPresent(DataFormats.FileDrop))
-        {
-            e.Effects = DragDropEffects.Copy;
-        }
-        else
-        {
-            e.Effects = DragDropEffects.None;
-        }
+        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
@@ -105,17 +295,12 @@ public partial class MainWindow : Window
         }
     }
 
-    private void DropArea_Click(object sender, MouseButtonEventArgs e)
-    {
-        BtnChooseFile_Click(sender, e);
-    }
-
-    private void BtnChooseFile_Click(object sender, RoutedEventArgs e)
+    private void BtnBrowse_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new OpenFileDialog
         {
-            Title = "Выберите аудиофайл",
-            Filter = "Аудиофайлы (*.mp3;*.wav;*.flac;*.ogg;*.aif)|*.mp3;*.wav;*.flac;*.ogg;*.aif;*.aiff|Все файлы (*.*)|*.*"
+            Title = "Open Audio File",
+            Filter = "Audio Files (*.mp3;*.wav;*.flac;*.ogg;*.aif)|*.mp3;*.wav;*.flac;*.ogg;*.aif;*.aiff|All Files (*.*)|*.*"
         };
 
         if (dlg.ShowDialog() == true)
@@ -138,169 +323,42 @@ public partial class MainWindow : Window
             var fi = new FileInfo(path);
 
             TxtFileName.Text = Path.GetFileName(path);
-            TxtFileMeta.Text = $"{fi.Length / 1024.0 / 1024.0:F2} МБ • {fi.Extension.ToUpperInvariant()} • Загружен";
+            TxtFileMeta.Text = $"{fi.Length / 1024.0 / 1024.0:F2} MB • {fi.Extension.ToUpperInvariant()}";
 
-            DropAreaBorder.Visibility = Visibility.Collapsed;
-            FileInfoBadge.Visibility = Visibility.Visible;
             BtnProcess.IsEnabled = true;
-            TxtStatus.Text = "Файл готов к обработке. Выберите пресет или настройте параметры и нажмите Render.";
+            TxtStatus.Text = "Loaded";
+            TxtStatusDetails.Text = "Click Render to process.";
 
-            // Сброс предыдущего результата
             _outputBuffer = null;
+            _inputBuffer = null;
             _player.Stop();
             _timer.Stop();
             BtnPlay.IsEnabled = false;
-            BtnPause.IsEnabled = false;
             BtnStop.IsEnabled = false;
             BtnSaveAs.IsEnabled = false;
             BtnOpenFolder.IsEnabled = false;
+            RbSourceOriginal.IsEnabled = false;
+            RbSourceProcessed.IsEnabled = false;
+
+            // Pre-load input into buffer and save as temporary WAV for instant, zero-latency A/B comparison
+            Task.Run(() =>
+            {
+                try
+                {
+                    _inputBuffer = AudioBridge.Load(_inputFilePath);
+                    RetroAudioPipeline.EnsureSafetyHeadroom(_inputBuffer, 0.85f);
+                    string tempDir = Path.GetTempPath();
+                    _tempOriginalPath = Path.Combine(tempDir, $"oldsound_orig_{Guid.NewGuid():N}.wav");
+                    using var fs = File.Create(_tempOriginalPath);
+                    WavCodec.Write(_inputBuffer, fs, bitsPerSample: 16);
+                }
+                catch { }
+            });
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Ошибка выбора файла: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show($"File error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
-    }
-
-    #endregion
-
-    #region Preset Selection & Parameter Sync
-
-    private void PresetRadio_Checked(object sender, RoutedEventArgs e)
-    {
-        if (!_isInitialized || sender is not RadioButton rb) return;
-
-        string presetName = rb.Name switch
-        {
-            "Rb3DoFourSight" => "four-sight-3do",
-            "RbPsxXa" => "four-sight-psx-xa",
-            "RbPsxSpu" => "four-sight-psx-spu",
-            "RbSilentHill" => "psx-silent-hill",
-            "RbPsxLofi" => "psx-lofi-11k",
-            "RbTapeFerric" => "cassette-ferric",
-            "RbTapeHybrid" => "psx-tape-hybrid",
-            _ => "four-sight-3do"
-        };
-
-        LoadPresetToControls(presetName);
-    }
-
-    private void LoadPresetToControls(string presetName)
-    {
-        if (!_isInitialized || CbCodec == null) return;
-        _isUpdatingUiFromPreset = true;
-        try
-        {
-            var p = PresetRegistry.Get(presetName);
-
-            // Кодек
-            CbCodec.SelectedIndex = p.Codec switch
-            {
-                AudioCodecType.Sdx2_3Do => 0,
-                AudioCodecType.SonyAdpcm => 1,
-                _ => 2
-            };
-
-            // Интерполятор
-            CbInterp.SelectedIndex = p.Interpolation switch
-            {
-                InterpolationType.Linear3DoHalfRate => 0,
-                InterpolationType.Gaussian4Point => 1,
-                InterpolationType.Linear => 2,
-                _ => 3
-            };
-
-            // Частота голоса
-            SliderVoiceRate.Value = p.SpuVoiceRate;
-            TxtVoiceRate.Text = $"{p.SpuVoiceRate} Гц";
-
-            // Срез фильтра
-            SliderFilterCutoff.Value = p.FilterCutoffHz;
-            TxtFilterCutoff.Text = $"{p.FilterCutoffHz:F0} Гц";
-            ChkAnalogFilter.IsChecked = p.EnableAnalogFilter;
-
-            // Шум ЦАП
-            SliderNoiseFloor.Value = p.SpuNoiseLevel;
-            TxtNoiseFloor.Text = p.SpuNoiseLevel > 0.01f ? $"-{(68 - p.SpuNoiseLevel * 6):F0} dBFS" : "Выкл";
-
-            // Bus Glue
-            SliderBusGlue.Value = p.BusGlue;
-            TxtBusGlue.Text = $"{p.BusGlue:F2}x";
-
-            // Кассета
-            ChkTape.IsChecked = p.EnableTape;
-            SliderTapeDrive.Value = p.TapeSettings.Drive;
-            TxtTapeDrive.Text = $"{p.TapeSettings.Drive:F2}x";
-            SliderTapeMod.Value = p.TapeSettings.WowDepth;
-            TxtTapeMod.Text = $"{(int)(p.TapeSettings.WowDepth * 100)}%";
-        }
-        finally
-        {
-            _isUpdatingUiFromPreset = false;
-        }
-    }
-
-    private void ParamControl_Changed(object sender, RoutedEventArgs e)
-    {
-        if (_isUpdatingUiFromPreset) return;
-        // Пользователь изменил параметр вручную
-    }
-
-    private void SliderVoiceRate_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (TxtVoiceRate != null)
-            TxtVoiceRate.Text = $"{(int)SliderVoiceRate.Value} Гц";
-    }
-
-    private void SliderFilterCutoff_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (TxtFilterCutoff != null)
-            TxtFilterCutoff.Text = $"{SliderFilterCutoff.Value:F0} Гц";
-    }
-
-    private void SliderNoiseFloor_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (TxtNoiseFloor != null)
-        {
-            float val = (float)SliderNoiseFloor.Value;
-            TxtNoiseFloor.Text = val > 0.01f ? $"-{(68 - val * 6):F0} dBFS" : "Выкл";
-        }
-    }
-
-    private void SliderBusGlue_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (TxtBusGlue != null)
-            TxtBusGlue.Text = $"{SliderBusGlue.Value:F2}x";
-    }
-
-    private void SliderTapeDrive_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (TxtTapeDrive != null)
-            TxtTapeDrive.Text = $"{SliderTapeDrive.Value:F2}x";
-    }
-
-    private void SliderTapeMod_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (TxtTapeMod != null)
-            TxtTapeMod.Text = $"{(int)(SliderTapeMod.Value * 100)}%";
-    }
-
-    private void BtnReset_Click(object sender, RoutedEventArgs e)
-    {
-        Rb3DoFourSight.IsChecked = true;
-        LoadPresetToControls("four-sight-3do");
-    }
-
-    private void BtnHelp_Click(object sender, RoutedEventArgs e)
-    {
-        MessageBox.Show(
-            "OLDSOUND DSP EMULATOR\n\n" +
-            "• 3DO Four-Sight (1995): Фирменный 8-битный кодек SDX2 (нелинейный дифференциал по квадратному корню) " +
-            "сохраняет микродинамику тихих пассажей рояля Юдзи Номи и мягко сглаживает фронты резких ударов. " +
-            "Апсэмплинг half_rate.dsp воспроизводит зеркальный верхний спектр (11-22 кГц).\n\n" +
-            "• PS1 CD-XA (1996): 18.9 кГц ADPCM с аппаратным срезом 8.5 кГц прямо на ЦАП AK4309.\n\n" +
-            "• PS1 SPU VAG: 22.05 кГц с аппаратной гауссовой интерполяцией ЦАП, срезающей гармоники от 8 кГц и выше.\n\n" +
-            "• Все параметры откалиброваны с гарантией отсутствия цифрового клиппинга (-0.2 dBFS ceiling).",
-            "О программе OldSound", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     #endregion
@@ -309,53 +367,50 @@ public partial class MainWindow : Window
 
     private async void BtnProcess_Click(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrEmpty(_inputFilePath) || !File.Exists(_inputFilePath))
-        {
-            MessageBox.Show("Пожалуйста, сначала выберите аудиофайл.", "Внимание", MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
+        if (string.IsNullOrEmpty(_inputFilePath) || !File.Exists(_inputFilePath)) return;
 
-        // Собираем параметры из UI
+        var selectedCodec = ComboCodec.SelectedIndex switch
+        {
+            0 => AudioCodecType.Sdx2_3Do,
+            1 => AudioCodecType.SonyAdpcm,
+            _ => AudioCodecType.Bypass
+        };
+
+        var selectedInterp = ComboInterp.SelectedIndex switch
+        {
+            0 => InterpolationType.Linear3DoHalfRate,
+            1 => InterpolationType.Linear,
+            2 => InterpolationType.Gaussian4Point,
+            _ => InterpolationType.Bypass
+        };
+
         var preset = new AudioPreset
         {
-            Codec = CbCodec.SelectedIndex switch
-            {
-                0 => AudioCodecType.Sdx2_3Do,
-                1 => AudioCodecType.SonyAdpcm,
-                _ => AudioCodecType.Bypass
-            },
-            Interpolation = CbInterp.SelectedIndex switch
-            {
-                0 => InterpolationType.Linear3DoHalfRate,
-                1 => InterpolationType.Gaussian4Point,
-                2 => InterpolationType.Linear,
-                _ => InterpolationType.Bypass
-            },
+            Name = _currentPreset.Name,
+            Description = _currentPreset.Description,
+            Codec = selectedCodec,
+            Interpolation = selectedInterp,
             SpuVoiceRate = (int)SliderVoiceRate.Value,
-            EnableAnalogFilter = ChkAnalogFilter.IsChecked == true,
-            FilterTopology = (CbCodec.SelectedIndex == 0) ? FilterTopology.TwoPoleSallenKey : FilterTopology.ThreePoleSpu,
+            EnableAnalogFilter = SliderFilterCutoff.Value < 21900f,
+            FilterTopology = (selectedCodec == AudioCodecType.Sdx2_3Do)
+                ? FilterTopology.TwoPoleSallenKey
+                : FilterTopology.ThreePoleSpu,
             FilterCutoffHz = (float)SliderFilterCutoff.Value,
-            PreFilterCutoffHz = (CbCodec.SelectedIndex == 0) ? 10000f : Math.Min(10500f, (float)SliderVoiceRate.Value * 0.45f),
-            SpuNoiseLevel = (float)SliderNoiseFloor.Value,
-            BusGlue = (float)SliderBusGlue.Value,
-            EnableTape = ChkTape.IsChecked == true,
-            TapeSettings = new CassetteTapeSettings
-            {
-                Drive = (float)SliderTapeDrive.Value,
-                WowDepth = (float)SliderTapeMod.Value,
-                FlutterDepth = (float)SliderTapeMod.Value * 0.75f,
-                HissLevel = 0.2f,
-                CutoffHz = 11500f,
-                EnableHeadEq = true,
-                Mix = 1.0f
-            },
+            PreFilterCutoffHz = (SwitchAliasing.IsChecked == true) ? 0f : 10500f,
+            AuthenticAdpcmMode = true,
+            SpuNoiseLevel = (float)SliderNoise.Value,
+            NoiseProfile = (ComboNoiseProfile.SelectedIndex == 1) ? AnalogNoiseProfile.Cassette : AnalogNoiseProfile.Console,
+            BusGlue = 0.0f,
+            EnableTape = _currentPreset.EnableTape,
+            TapeSettings = _currentPreset.TapeSettings,
             OutputSampleRate = 44100
         };
 
         BtnProcess.IsEnabled = false;
-        ProgressBar.Visibility = Visibility.Visible;
-        TxtStatus.Text = "Обработка аудио... Чтение и применение физической модели тракта...";
-        TxtBench.Text = "";
+        ProgressBarStatus.Visibility = Visibility.Visible;
+        ProgressBarStatus.IsIndeterminate = true;
+        TxtStatus.Text = "Rendering...";
+        TxtStatusDetails.Text = $"{preset.Codec} @ {preset.SpuVoiceRate} Hz";
 
         var sw = Stopwatch.StartNew();
 
@@ -363,16 +418,13 @@ public partial class MainWindow : Window
         {
             await Task.Run(() =>
             {
-                // Загружаем входной буфер, если еще не загружен
                 if (_inputBuffer == null)
                 {
                     _inputBuffer = AudioBridge.Load(_inputFilePath);
                 }
 
-                // Применяем ретро-тракт
                 _outputBuffer = RetroAudioPipeline.Process(_inputBuffer, preset);
 
-                // Сохраняем временный файл WAV для мгновенного A/B прослушивания
                 string tempDir = Path.GetTempPath();
                 _tempProcessedPath = Path.Combine(tempDir, $"oldsound_preview_{Guid.NewGuid():N}.wav");
                 using (var fs = File.Create(_tempProcessedPath))
@@ -382,28 +434,37 @@ public partial class MainWindow : Window
             });
 
             sw.Stop();
-            TxtBench.Text = $"✓ Выполнено за {sw.Elapsed.TotalSeconds:F2} сек ({_outputBuffer!.LengthSamples} сэмплов)";
-            TxtStatus.Text = $"Обработка завершена! Звук реконструирован с параметрами: {preset.Codec}, {preset.SpuVoiceRate} Гц, LPF {preset.FilterCutoffHz:F0} Гц.";
+            TxtStatus.Text = "Ready";
+            string noiseType = (preset.NoiseProfile == AnalogNoiseProfile.Cassette) ? "Tape" : "SPU";
+            TxtStatusDetails.Text = $"Rendered in {sw.Elapsed.TotalSeconds:F2}s • {noiseType} Noise: {(int)(preset.SpuNoiseLevel * 100)}%";
 
-            // Активируем плеер и экспорт
             BtnPlay.IsEnabled = true;
-            BtnPause.IsEnabled = true;
             BtnStop.IsEnabled = true;
             BtnSaveAs.IsEnabled = true;
             BtnOpenFolder.IsEnabled = true;
+            RbSourceOriginal.IsEnabled = true;
+            RbSourceProcessed.IsEnabled = true;
 
-            // Загружаем результат в плеер
-            SetupPlayerSource(useProcessed: RbPlayProcessed.IsChecked == true);
+            if (RbSourceProcessed.IsChecked != true)
+            {
+                RbSourceProcessed.IsChecked = true; // Триггерит AudioSource_Changed -> SwitchSource()
+            }
+            else
+            {
+                SwitchSource();
+            }
         }
         catch (Exception ex)
         {
-            TxtStatus.Text = $"Ошибка обработки: {ex.Message}";
-            MessageBox.Show($"Произошла ошибка при обработке: {ex.Message}", "Ошибка DSP", MessageBoxButton.OK, MessageBoxImage.Error);
+            TxtStatus.Text = "Failed";
+            TxtStatusDetails.Text = ex.Message;
+            System.Windows.MessageBox.Show($"DSP error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
             BtnProcess.IsEnabled = true;
-            ProgressBar.Visibility = Visibility.Collapsed;
+            ProgressBarStatus.IsIndeterminate = false;
+            ProgressBarStatus.Visibility = Visibility.Collapsed;
         }
     }
 
@@ -413,65 +474,71 @@ public partial class MainWindow : Window
 
     private void AudioSource_Changed(object sender, RoutedEventArgs e)
     {
-        if (_outputBuffer == null) return;
-        bool useProcessed = RbPlayProcessed.IsChecked == true;
+        if (!_isInitialized || _outputBuffer == null) return;
+        SwitchSource();
+    }
+
+    private void SwitchSource()
+    {
+        bool useProcessed = RbSourceProcessed?.IsChecked == true;
+        string? targetPath = useProcessed ? _tempProcessedPath : _tempOriginalPath;
+        if (string.IsNullOrEmpty(targetPath) || !File.Exists(targetPath)) return;
+
         TimeSpan currentPos = _player.Position;
         bool wasPlaying = _timer.IsEnabled;
 
-        SetupPlayerSource(useProcessed);
+        _isSwitchingSource = true;
+        _pendingSeekPosition = currentPos;
+        _wasPlayingBeforeSwitch = wasPlaying;
 
-        if (wasPlaying)
-        {
-            _player.Position = currentPos;
-            _player.Play();
-        }
-    }
-
-    private void SetupPlayerSource(bool useProcessed)
-    {
-        string? targetPath = useProcessed ? _tempProcessedPath : _inputFilePath;
-        if (string.IsNullOrEmpty(targetPath) || !File.Exists(targetPath)) return;
+        // Надежное закрытие старого медиа-графа перед загрузкой нового рендера
+        _player.Stop();
+        _player.Close();
 
         _player.Open(new Uri(targetPath));
-        TxtNowPlaying.Text = useProcessed ? "▶ Воспроизведение: Ретро-результат" : "▶ Воспроизведение: Оригинальный трек";
     }
 
     private void BtnPlay_Click(object sender, RoutedEventArgs e)
     {
-        _player.Play();
-        _timer.Start();
-        BtnPlay.Content = "▶ Воспроизведение...";
-    }
-
-    private void BtnPause_Click(object sender, RoutedEventArgs e)
-    {
-        _player.Pause();
-        _timer.Stop();
-        BtnPlay.Content = "▶ Воспроизвести";
+        if (_timer.IsEnabled)
+        {
+            _player.Pause();
+            _timer.Stop();
+            BtnPlay.Content = "Play";
+        }
+        else
+        {
+            _player.Play();
+            _timer.Start();
+            BtnPlay.Content = "Pause";
+        }
     }
 
     private void BtnStop_Click(object sender, RoutedEventArgs e)
     {
         _player.Stop();
         _timer.Stop();
-        BtnPlay.Content = "▶ Воспроизвести";
+        BtnPlay.Content = "Play";
         SliderTimeline.Value = 0;
         TxtTimeCurrent.Text = "00:00";
     }
 
     private void SliderVolume_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        _player.Volume = SliderVolume.Value;
+        if (!_isInitialized) return;
+        _player.Volume = e.NewValue;
         if (TxtVolume != null)
-            TxtVolume.Text = $"{(int)(SliderVolume.Value * 100)}%";
+        {
+            TxtVolume.Text = $"{(int)(e.NewValue * 100)}%";
+        }
     }
 
-    private void SliderTimeline_MouseDown(object sender, MouseButtonEventArgs e)
+    private void SliderTimeline_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
         _isDraggingTimeline = true;
     }
 
-    private void SliderTimeline_MouseUp(object sender, MouseButtonEventArgs e)
+    private void SliderTimeline_PreviewMouseUp(object sender, MouseButtonEventArgs e)
     {
         _isDraggingTimeline = false;
         _player.Position = TimeSpan.FromSeconds(SliderTimeline.Value);
@@ -485,6 +552,21 @@ public partial class MainWindow : Window
         }
     }
 
+    private void Timer_Tick(object? sender, EventArgs e)
+    {
+        if (!_isDraggingTimeline && _player.NaturalDuration.HasTimeSpan)
+        {
+            double pos = _player.Position.TotalSeconds;
+            SliderTimeline.Value = pos;
+            TxtTimeCurrent.Text = FormatTime(_player.Position);
+        }
+    }
+
+    private static string FormatTime(TimeSpan ts)
+    {
+        return $"{(int)ts.TotalMinutes:D2}:{ts.Seconds:D2}";
+    }
+
     #endregion
 
     #region Export
@@ -496,8 +578,8 @@ public partial class MainWindow : Window
         string origName = Path.GetFileNameWithoutExtension(_inputFilePath ?? "audio");
         var dlg = new SaveFileDialog
         {
-            Title = "Сохранить обработанный ретро-трек",
-            FileName = $"{origName}_retro.wav",
+            Title = "Export Audio",
+            FileName = $"{origName}_foursight.wav",
             Filter = "WAV PCM 16-bit (*.wav)|*.wav|MP3 Audio (*.mp3)|*.mp3|FLAC Lossless (*.flac)|*.flac"
         };
 
@@ -518,12 +600,13 @@ public partial class MainWindow : Window
                 }
 
                 _lastSavedPath = outPath;
-                TxtStatus.Text = $"Файл успешно сохранен: {Path.GetFileName(outPath)}";
-                MessageBox.Show($"Файл успешно сохранен:\n{outPath}", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
+                TxtStatus.Text = "Exported";
+                TxtStatusDetails.Text = Path.GetFileName(outPath);
+                System.Windows.MessageBox.Show($"File exported successfully:\n{outPath}", "Export Complete", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка сохранения: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Windows.MessageBox.Show($"Export error: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
     }

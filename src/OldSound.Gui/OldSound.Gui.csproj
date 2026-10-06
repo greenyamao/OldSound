@@ -13,4 +13,8 @@
     <ProjectReference Include="..\OldSound.Core\OldSound.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
+  </ItemGroup>
+
 </Project>

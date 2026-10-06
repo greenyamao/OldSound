@@ -77,7 +77,7 @@ public static class Program
             "  [cyan]oldsound[/] <input-file> [output-file] [--preset <имя>]\n" +
             "  [cyan]oldsound presets[/] (список доступных профилей звучания)\n\n" +
             "[bold yellow]Основные параметры:[/]\n" +
-            "  [green]--preset <имя>[/]       Профиль звучания (напр. [yellow]four-sight-3do[/], [yellow]psx-sfx-22k[/])\n" +
+            "  [green]--preset <имя>[/]       Профиль звучания (напр. [yellow]four-sight-1995[/], [yellow]ps1-spu-1994[/])\n" +
             "  [green]-o, --output <путь>[/]   Путь к выходному файлу или папке\n" +
             "  [green]--codec <тип>[/]         Кодек: [yellow]adpcm[/], [yellow]sdx2[/], [yellow]bypass[/]\n" +
             "  [green]--interp <тип>[/]        Интерполяция ЦАП: [yellow]gauss[/], [yellow]linear3do[/], [yellow]linear[/]\n" +
@@ -93,11 +93,10 @@ public static class Program
             "  [green]--hiss <число>[/]        Уровень шума ленты (0.0 .. 1.0)\n" +
             "  [green]--pattern <маска>[/]     Маска файлов для batch (напр. [yellow]*.mp3[/], по умолч. [yellow]*.*[/])\n\n" +
             "[bold yellow]Примеры:[/]\n" +
-            "  oldsound process track.wav -o track_3do.wav --preset four-sight-3do\n" +
-            "  oldsound process music.flac -o music_xa.mp3 --preset four-sight-psx-xa\n" +
-            "  oldsound process ambient.mp3 -o ambient_fog.mp3 --preset psx-silent-hill\n" +
-            "  oldsound process melody.flac -o melody_tape.ogg --preset cassette-ferric\n" +
-            "  oldsound batch ./music -o ./music_retro --preset four-sight-3do"
+            "  oldsound process track.wav -o track_3do.wav --preset four-sight-1995\n" +
+            "  oldsound process music.flac -o music_ps1.mp3 --preset ps1-spu-1994\n" +
+            "  oldsound process ambient.mp3 -o ambient_tape.mp3 --preset cassette-type1\n" +
+            "  oldsound batch ./music -o ./music_retro --preset four-sight-1995"
         ))
         {
             Header = new PanelHeader("[bold white]Справка по командам OldSound[/]"),
@@ -152,7 +151,7 @@ public static class Program
     {
         string? inputPath = null;
         string? outputPath = null;
-        string presetName = "four-sight-3do";
+        string presetName = PresetRegistry.DefaultPresetName;
 
         int? overrideRate = null;
         float? overrideCutoff = null;
@@ -286,7 +285,7 @@ public static class Program
     {
         string? inputDir = null;
         string? outputDir = null;
-        string presetName = "four-sight-3do";
+        string presetName = PresetRegistry.DefaultPresetName;
         string pattern = "*.*";
 
         for (int i = 0; i < args.Length; i++)
